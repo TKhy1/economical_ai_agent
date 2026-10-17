@@ -90,6 +90,24 @@ LLM 配置 / 历史处理 / DeepSeek tool-call 协议（`tests/test_llm_agent.py
 每个用例都跑在临时 SQLite 文件上，不会碰到真实数据库；若系统临时目录不可写，
 可设置环境变量 `ECONOMICAL_AGENT_TEST_TMP` 指向可写目录。
 
+## 克隆后的钩子设置
+
+仓库自带 `.githooks/pre-commit`，提交前会拦截 `.env`、数据库、私钥证书，以及内容里
+形如 `sk-…`、`ghp_…`、`AKIA…` 的密钥特征。钩子文件随仓库一起分发，但 `core.hooksPath`
+属于本地配置、不进版本库，**克隆后需要执行一次**：
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+确认生效（无输出且退出码为 0 表示检查通过）：
+
+```powershell
+git hook run pre-commit
+```
+
+漏掉这一步不会报错，只是钩子静默不生效。遇到误报可 `git commit --no-verify` 跳过。
+
 ## 配置
 
 把 `.env.example` 复制为 `.env`，填上 DeepSeek 的 Key 即可（[获取地址](https://platform.deepseek.com/api_keys)）：

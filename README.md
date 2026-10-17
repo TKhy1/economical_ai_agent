@@ -101,6 +101,26 @@ Each test runs against a throwaway SQLite file, so your real database is never t
 Set `ECONOMICAL_AGENT_TEST_TMP` if the system temp directory is not writable in your
 environment.
 
+## Hook setup after cloning
+
+The repo ships `.githooks/pre-commit`, which blocks `.env`, databases and private keys,
+plus secret-shaped content such as `sk-…`, `ghp_…` or `AKIA…`. The hook file travels with
+the repo, but `core.hooksPath` is local config and is not versioned — **enable it once
+after cloning**:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Verify it (no output and exit code 0 means the check ran and passed):
+
+```powershell
+git hook run pre-commit
+```
+
+Skipping this step raises no error — the hook just stays silently inactive. Use
+`git commit --no-verify` to bypass it for a false positive.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and paste a DeepSeek key
