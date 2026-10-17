@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en" id="html-root">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title id="page-title">CampusWallet — AI Financial Planner</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="phone">
+    <div class="statusbar">
+      <span id="clock">9:41</span>
+      <span class="statusbar-icons">●●● ▲ ▮▮</span>
+    </div>
+
+    <header class="app-header">
+      <h1>CampusWallet</h1>
+      <p class="app-sub" data-i18n="app_sub">Your AI budget copilot</p>
+    </header>
+
+    <main class="screen">
+
+      <!-- HOME -->
+      <section id="view-home" class="view active">
+        <div class="card balance-card">
+          <div class="balance-label" id="home-balance-label">Net balance this week</div>
+          <div class="balance-value" id="home-net-balance">¥0.00</div>
+          <div class="balance-sub">
+            <span id="home-income">Income ¥0.00</span> · <span id="home-expense">Spent ¥0.00</span>
+          </div>
+          <div class="balance-available" id="home-available"></div>
+        </div>
+
+        <div class="card assistant-entry-card">
+          <div class="card-title" data-i18n="card_home_assistant">Talk to your budget assistant</div>
+          <p class="assistant-entry-copy" data-i18n="home_assistant_hint">Describe spending, income, budgets, or savings goals in your own words.</p>
+          <button type="button" id="home-chat-cta" class="btn-primary" data-i18n="home_assistant_cta">Open chat</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="card_fund_pools">Fund pools</div>
+          <div id="home-tiers" class="tier-list"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="card_ai_insights">AI insights</div>
+          <div id="insights-list" class="insights-list"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="card_recent_activity">Recent activity</div>
+          <div id="home-recent" class="txn-list"></div>
+        </div>
+      </section>
+
+      <!-- TRANSACTIONS -->
+      <section id="view-transactions" class="view">
+        <form id="txn-form" class="card form-card">
+          <div class="card-title" data-i18n="card_add_transaction">Add transaction</div>
+          <div class="form-row">
+            <label data-i18n="label_type">Type</label>
+            <div class="segmented" id="txn-type-segmented">
+              <button type="button" class="seg-btn active" data-value="expense" data-i18n="seg_expense">Expense</button>
+              <button type="button" class="seg-btn" data-value="income" data-i18n="seg_income">Income</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="txn-amount" data-i18n="label_amount">Amount (¥)</label>
+            <input type="number" id="txn-amount" step="0.01" min="0.01" required placeholder="0.00">
+          </div>
+          <div class="form-row">
+            <label for="txn-category" data-i18n="label_category">Category</label>
+            <select id="txn-category"></select>
+          </div>
+          <div class="form-row">
+            <label for="txn-note" data-i18n="label_note">Note (optional)</label>
+            <input type="text" id="txn-note" maxlength="120" placeholder="e.g. Weekly groceries" data-i18n-placeholder="placeholder_note">
+          </div>
+          <button type="submit" class="btn-primary" data-i18n="btn_add">Add</button>
+        </form>
+
+        <div class="card">
+          <div class="card-title" data-i18n="card_all_transactions">All transactions</div>
+          <div id="txn-list-full" class="txn-list"></div>
+        </div>
+      </section>
+
+      <!-- BUDGET -->
+      <section id="view-budget" class="view">
+        <div class="card">
+          <div class="card-title-row">
+            <div class="card-title" data-i18n="card_budget_period">Budget period</div>
+            <div class="segmented" id="budget-period-segmented">
+              <button type="button" class="seg-btn active" data-value="weekly" data-i18n="seg_weekly">Weekly</button>
+              <button type="button" class="seg-btn" data-value="monthly" data-i18n="seg_monthly">Monthly</button>
+            </div>
+          </div>
+          <div id="budget-tiers" class="tier-list"></div>
+        </div>
+
+        <form id="budget-form" class="card form-card">
+          <div class="card-title" data-i18n="card_adjust_limits">Adjust limits</div>
+          <div class="form-row">
+            <label for="limit-survival" data-i18n="label_survival_limit">Survival tier (¥)</label>
+            <input type="number" id="limit-survival" step="0.01" min="0">
+          </div>
+          <div class="form-row">
+            <label for="limit-buffer" data-i18n="label_buffer_limit">Buffer tier (¥)</label>
+            <input type="number" id="limit-buffer" step="0.01" min="0">
+          </div>
+          <div class="form-row">
+            <label for="limit-learning" data-i18n="label_learning_limit">Learning tier (¥)</label>
+            <input type="number" id="limit-learning" step="0.01" min="0">
+          </div>
+          <button type="submit" class="btn-primary" data-i18n="btn_save_limits">Save limits</button>
+        </form>
+      </section>
+
+      <!-- GOALS -->
+      <section id="view-goals" class="view">
+        <form id="goal-form" class="card form-card">
+          <div class="card-title" data-i18n="card_new_goal">New savings goal</div>
+          <div class="form-row">
+            <label for="goal-name" data-i18n="label_goal_name">Goal name</label>
+            <input type="text" id="goal-name" required placeholder="e.g. Spring break trip" data-i18n-placeholder="placeholder_goal_name">
+          </div>
+          <div class="form-row">
+            <label for="goal-target" data-i18n="label_target_amount">Target amount (¥)</label>
+            <input type="number" id="goal-target" step="0.01" min="0.01" required>
+          </div>
+          <div class="form-row">
+            <label for="goal-deadline" data-i18n="label_deadline">Deadline (optional)</label>
+            <input type="date" id="goal-deadline">
+          </div>
+          <button type="submit" class="btn-primary" data-i18n="btn_create_goal">Create goal</button>
+        </form>
+
+        <div id="goals-list" class="card-stack"></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="view-settings" class="view">
+        <form id="profile-form" class="card form-card">
+          <div class="card-title" data-i18n="card_profile">Your profile</div>
+          <div class="form-row">
+            <label for="profile-name" data-i18n="label_name">Name</label>
+            <input type="text" id="profile-name" required>
+          </div>
+          <div class="form-row">
+            <label for="profile-income" data-i18n="label_monthly_income">Monthly income (¥)</label>
+            <input type="number" id="profile-income" step="0.01" min="0" required>
+          </div>
+          <div class="form-row">
+            <label for="profile-risk" data-i18n="label_risk_level">Risk level</label>
+            <select id="profile-risk">
+              <option value="conservative" data-i18n="risk_conservative">Conservative</option>
+              <option value="moderate" data-i18n="risk_moderate">Moderate</option>
+              <option value="aggressive" data-i18n="risk_aggressive">Aggressive</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="profile-threshold" data-i18n="label_threshold">Safety balance threshold (¥)</label>
+            <input type="number" id="profile-threshold" step="0.01" min="0" required>
+          </div>
+          <button type="submit" class="btn-primary" data-i18n="btn_save_profile">Save profile</button>
+          <p class="form-hint" data-i18n="profile_hint">Changing risk level regenerates future budget suggestions, not past periods.</p>
+        </form>
+
+        <div class="card">
+          <div class="card-title" data-i18n="card_language">Language</div>
+          <div class="segmented" id="language-segmented">
+            <button type="button" class="seg-btn" data-value="en" data-i18n="lang_en">English</button>
+            <button type="button" class="seg-btn" data-value="zh" data-i18n="lang_zh">中文</button>
+          </div>
+          <p class="form-hint" data-i18n="settings_hint">Choose your preferred display language.</p>
+        </div>
+      </section>
+      <!-- ASSISTANT -->
+      <section id="view-assistant" class="view">
+        <div class="card chat-card">
+          <div class="card-title" data-i18n="card_assistant">AI Assistant</div>
+          <div id="chat-messages" class="chat-messages"></div>
+          <form id="chat-form" class="chat-input-row">
+            <input type="text" id="chat-input" placeholder="Ask me anything…" data-i18n-placeholder="chat_input_placeholder" autocomplete="off">
+            <button type="submit" data-i18n="btn_send">Send</button>
+          </form>
+        </div>
+      </section>
+
+    </main>
+
+    <nav class="tabbar">
+      <button class="tab-btn active" data-view="home">
+        <span class="tab-icon">⌂</span><span data-i18n="tab_home">Home</span>
+      </button>
+      <button class="tab-btn" data-view="transactions">
+        <span class="tab-icon">≡</span><span data-i18n="tab_activity">Activity</span>
+      </button>
+      <button class="tab-btn" data-view="budget">
+        <span class="tab-icon">◔</span><span data-i18n="tab_budget">Budget</span>
+      </button>
+      <button class="tab-btn" data-view="goals">
+        <span class="tab-icon">★</span><span data-i18n="tab_goals">Goals</span>
+      </button>
+      <button class="tab-btn" data-view="assistant">
+        <span class="tab-icon">💬</span><span data-i18n="tab_assistant">Chat</span>
+      </button>
+      <button class="tab-btn" data-view="settings">
+        <span class="tab-icon">⚙</span><span data-i18n="tab_settings">Settings</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

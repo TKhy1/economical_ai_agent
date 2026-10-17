@@ -1,0 +1,72 @@
+# ===========================================================================
+# 经济规划 AI Agent —— 仓库忽略规则
+# 原则：只跟踪源码与文档；虚拟环境、缓存、运行期数据、密钥一律不入库。
+# ===========================================================================
+
+# ---------- Python 字节码与缓存 ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.so
+*.egg
+
+# ---------- 虚拟环境（venv/ 为当前环境，venv.old-* 为历史遗留环境） ----------
+venv/
+venv.*/
+.venv/
+env/
+ENV/
+virtualenv/
+
+# ---------- 构建与打包产物 ----------
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+*.spec
+
+# ---------- 测试与工具缓存 ----------
+.pytest_cache/
+.unittest/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.prof
+.python-version
+
+# ---------- 密钥与本地配置 ----------
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# ---------- 运行期数据 ----------
+# SQLite 库首次启动时自动建表；演示数据用 seed_demo_data.py 重新生成。
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ---------- 日志与临时文件 ----------
+*.log
+logs/
+*.tmp
+*.bak
+*.orig
+.recovery/
+
+# ---------- 编辑器与操作系统 ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini

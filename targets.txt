@@ -1,0 +1,35 @@
+Help me build a web demo for a multi-functional financial planning AI agent for college students. For the backend, set up a server environment using Python and build a RESTful API with routing using the Flask framework. For the frontend, use standard HTML with custom CSS layouts and JavaScript, emphasizing a mobile-first responsive design that simulates mobile screen aspect ratios. Use SQLite for the database and create the minimum necessary tables, including the following core tables:
+UserProfile: Stores user profiles, risk levels, and security threshold statuses.
+Transaction: Records transaction history, including amount, category, and time.
+BudgetPlan: Records the three-tier fund pool limits for the current week/month (survival tier, buffer tier, and learning tier).
+Goal: Users’ savings goals and progress.
+
+
+Next, we’ll develop the core backend routes and rules. First, we’ll develop the core API routes. In the backend, we’ll implement the following interfaces for the frontend to call and place them where they should be:
+POST /api/chat: Receives natural language text from the frontend and returns the Agent’s response.
+POST /api/ledger/add: Structured accounting interface.
+GET /api/budget/status: Retrieves the current status of the budget pool.
+GET /api/goal/progress: Retrieves the progress toward the goal.
+
+
+Now let’s move on to the next step. First, we need to encapsulate deterministic rules to prevent the large model from directly modifying financial data. Financial operations must be handled through the backend `ledger.add_transaction` function. The specific steps are: deduct necessary expenses → lock the target amount → calculate the available balance.
+Next, integrate with the large model API (enter “Enter AI API” in the API field) and configure the tool’s ability to call the API. For example:
+When a user says, “I spent 30 yuan on a taxi today,” the large model should not respond directly. Instead, it should extract the data (amount: 30, category: transportation) and call the backend `ledger.add_transaction` function.
+
+The backend executes the deduction via the rules engine and returns the updated budget balance to the large model.
+
+The large model then generates a personalized response based on the new balance: “The transaction has been recorded. You have 50 yuan remaining in your transportation budget for this week.”
+
+
+
+
+Phase 3: Front-End Web Interaction Development
+First, build a conversational entry point.
+
+Write the HTML structure and custom CSS to create an interface resembling a chat window.
+
+Write JavaScript logic to listen for user input and send events, and use the `fetch` method to make asynchronous requests to the `/api/chat` endpoint.
+
+Handle the rendering of chat logs, and design specialized interactive card components for specific commands issued by the Agent (such as the “Confirm Credit” button or displaying a risk warning dialog).
+
+
