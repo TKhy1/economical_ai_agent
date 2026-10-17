@@ -12,6 +12,7 @@ import json
 import agent
 import config
 import ledger
+import limits
 
 SYSTEM_PROMPT = (
     "You are CampusWallet's budgeting assistant for a college student. Currency is CNY (¥). "
@@ -98,18 +99,87 @@ TOOLS = [
 
 MAX_TOOL_ROUNDS = 5
 
+# Chat history is client-supplied and only used as plain text context. Cap both the number of
+# turns and the length of each turn so a long conversation cannot blow up the request.
+MAX_HISTORY_MESSAGES = 12
+MAX_HISTORY_CHARS = 2000
+
+# Values shipped in .env.example (or obvious dummies) must not look like a configured key:
+# otherwise every chat makes a doomed API call before falling back to the rule parser.
+_PLACEHOLDER_KEYS = {
+    "",
+    "enter ai api",
+    "your api key",
+    "your-api-key",
+    "changeme",
+    "change-me",
+    "api-key",
+    "sk-...",
+}
+
 
 def is_configured():
-    return bool(config.AI_API_KEY)
+    key = (config.AI_API_KEY or "").strip()
+    return bool(key) and key.lower() not in _PLACEHOLDER_KEYS
+
+
+def _clean_history(history):
+    """Normalise client-supplied chat history into alternating text-only turns."""
+    if not isinstance(history, (list, tuple)):
+        return []
+    messages = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = item.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str):
+            continue
+        content = content.strip()
+        if not content:
+            continue
+        content = content[:MAX_HISTORY_CHARS]
+        if messages and messages[-1]["role"] == role:
+            messages[-1]["content"] = (
+                messages[-1]["content"] + "\n" + content
+            )[:MAX_HISTORY_CHARS]
+        else:
+            messages.append({"role": role, "content": content})
+    while messages and messages[0]["role"] != "user":
+        messages.pop(0)
+    return messages[-MAX_HISTORY_MESSAGES:]
+
+
+def build_messages(message, history=None):
+    """Anthropic-style messages: recent text turns + the current user message.
+
+    The Messages API expects alternating roles, so consecutive turns are merged and a
+    leading assistant turn is dropped. Tool blocks are never accepted from the client.
+    """
+    message = (message or "").strip()[:MAX_HISTORY_CHARS]
+    messages = _clean_history(history)
+    if messages and messages[-1]["role"] == "user":
+        messages[-1]["content"] = (
+            messages[-1]["content"] + "\n" + message
+        )[:MAX_HISTORY_CHARS]
+    else:
+        messages.append({"role": "user", "content": message})
+    messages = messages[-MAX_HISTORY_MESSAGES:]
+    while messages and messages[0]["role"] != "user":
+        messages.pop(0)
+    return messages
 
 
 def _execute_tool(db, name, tool_input):
     """Run one tool call locally; only `ledger` may touch the database."""
+    if not isinstance(tool_input, dict):
+        raise ValueError("tool input must be an object")
+
     if name == "add_transaction":
         try:
-            amount = float(tool_input.get("amount"))
-        except (TypeError, ValueError):
-            raise ValueError("amount must be positive")
+            amount = ledger.parse_number(tool_input.get("amount"))
+        except ValueError:
+            raise ValueError("amount must be positive") from None
         if amount <= 0:
             raise ValueError("amount must be positive")
 
@@ -117,25 +187,53 @@ def _execute_tool(db, name, tool_input):
         if txn_type not in ("income", "expense"):
             raise ValueError("type must be income or expense")
 
-        category = (tool_input.get("category") or "other").strip().lower()
+        category = tool_input.get("category")
+        if category is None or category == "":
+            category = "other"
+        if not isinstance(category, str):
+            raise ValueError("category must be a string")
+        category = category.strip().lower()
         if not category:
             raise ValueError("category is required")
+        if ledger.storable_text(category) is None:
+            raise ValueError("category must be a string")
+        if len(category) > limits.MAX_CATEGORY_LENGTH:
+            raise ValueError("category is too long")
+
+        note = tool_input.get("note")
+        if note is None:
+            note = ""
+        if not isinstance(note, str):
+            raise ValueError("note must be a string")
+        if ledger.storable_text(note) is None:
+            raise ValueError("note must be a string")
+        if len(note) > limits.MAX_NOTE_LENGTH:
+            raise ValueError("note is too long")
 
         return {
             "proposed_transaction": {
                 "amount": amount,
                 "type": txn_type,
                 "category": category,
-                "note": tool_input.get("note") or "",
+                "note": note,
             }
         }
 
     if name == "get_budget_status":
-        period = tool_input.get("period") or "weekly"
+        period = tool_input.get("period")
+        if period is None:
+            period = "weekly"
+        if period not in ("weekly", "monthly"):
+            raise ValueError("period must be weekly or monthly")
         return ledger.compute_budget_status(db, period)
 
     if name == "get_goal_progress":
-        name_filter = (tool_input.get("name") or "").strip().lower()
+        name_filter = tool_input.get("name")
+        if name_filter is None:
+            name_filter = ""
+        if not isinstance(name_filter, str):
+            raise ValueError("name must be a string")
+        name_filter = name_filter.strip().lower()
         goals = [agent.compute_goal_progress(g) for g in ledger.list_goals(db)]
         if name_filter:
             goals = [g for g in goals if name_filter in (g.get("name") or "").lower()]
@@ -144,12 +242,12 @@ def _execute_tool(db, name, tool_input):
     return {"error": "unknown tool " + name}
 
 
-def chat_with_llm(db, message):
+def chat_with_llm(db, message, history=None):
     """Runs the tool-use loop. Returns (reply_text, transaction_proposal_or_None)."""
     import anthropic  # imported lazily so the package is only required once a key is set
 
     client = anthropic.Anthropic(api_key=config.AI_API_KEY)
-    messages = [{"role": "user", "content": message}]
+    messages = build_messages(message, history)
     proposal = None
     text = ""
 

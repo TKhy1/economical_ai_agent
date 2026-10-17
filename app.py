@@ -1,14 +1,16 @@
-﻿"""Flask REST API for the college-student financial planning AI agent demo."""
+"""Flask REST API for the college-student financial planning AI agent demo."""
 import json
+import logging
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from flask import Flask, g, jsonify, request, render_template
 
 import agent
 import ledger
+import limits
 import llm_agent
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +25,7 @@ SQLITE_INTEGER_MAX = 2 ** 63 - 1
 MAX_LIST_LIMIT = 1000
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _fits_sqlite_integer(value):
@@ -116,7 +119,7 @@ def init_db():
         try:
             cur.execute(
                 "INSERT INTO UserProfile (id, created_at) VALUES (?, ?)",
-                (DEFAULT_USER_ID, ledger.utcnow().isoformat()),
+                (DEFAULT_USER_ID, ledger.now().isoformat()),
             )
         except sqlite3.OperationalError:
             pass
@@ -132,15 +135,86 @@ def get_profile_row(db):
     return ledger.get_profile(db)
 
 
-def _json_body():
-    data = request.get_json(silent=True)
-    if isinstance(data, dict):
-        return data
-    return None
+def _json_body(force=True):
+    """Return the request body when it is a JSON object, else None (the route answers 400).
+
+    ``force=True`` keeps the documented tolerance for a client that forgets the
+    ``Content-Type`` header. A body nested past the decoder's recursion limit raises
+    RecursionError, which ``silent=True`` does not swallow — bad input, not a server
+    fault — so it maps to the same 400 as malformed JSON.
+    """
+    try:
+        data = request.get_json(force=force, silent=True)
+    except RecursionError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _storable_name(value):
+    """A user-facing name: non-empty, trimmed, and actually encodable as UTF-8.
+
+    SQLite rejects a lone surrogate (``"\\ud800"``) while binding it, which used to
+    surface as a 500 from the goal routes.
+    """
+    if not isinstance(value, str):
+        raise ValueError("name must be a string")
+    name = value.strip()
+    if not name:
+        raise ValueError("name must not be empty")
+    try:
+        name.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("name must be valid UTF-8 text") from None
+    if len(name) > limits.MAX_NAME_LENGTH:
+        raise ValueError("name is too long")
+    return name
+
+
+def _nonnegative(value, field):
+    """A finite JSON number that may be zero (money limits and balances)."""
+    try:
+        number = ledger.parse_number(value)
+    except ValueError:
+        raise ValueError(f"{field} must be a number") from None
+    if number < 0:
+        raise ValueError(f"{field} must be nonnegative")
+    return number
+
+
+def _positive(value, field):
+    """A finite JSON number greater than zero (a goal target)."""
+    number = _nonnegative(value, field)
+    if number <= 0:
+        raise ValueError(f"{field} must be positive")
+    return number
+
+
+def _parse_deadline(value):
+    """Validate an optional goal deadline and return it in canonical ``YYYY-MM-DD`` form.
+
+    ``null``/blank means "no deadline". Every reader parses the column with
+    ``date.fromisoformat()``, so anything else is rejected here instead of being
+    persisted and silently losing the goal's countdown and weekly-savings insight.
+    Re-checking against ``isoformat()`` keeps exactly one spelling in the database.
+    """
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError("deadline must be a string in YYYY-MM-DD format")
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        raise ValueError("deadline must be a valid date in YYYY-MM-DD format") from None
+    if parsed.isoformat() != value:
+        raise ValueError("deadline must be a valid date in YYYY-MM-DD format")
+    return parsed.isoformat()
 
 
 def _create_chat_action(db, action_type, payload, period_type):
-    now = ledger.utcnow()
+    now = ledger.now()
     action_id = uuid.uuid4().hex
     expires_at = (now + timedelta(minutes=10)).isoformat()
     db.execute(
@@ -200,16 +274,10 @@ def update_profile():
 
     name = profile["name"]
     if "name" in data:
-        raw = data["name"]
-        if not isinstance(raw, str):
-            return jsonify({"error": "name must be a string"}), 400
         try:
-            raw.encode("utf-8")
-        except UnicodeEncodeError:
-            return jsonify({"error": "name must be valid UTF-8 text"}), 400
-        name = raw.strip()
-        if not name:
-            return jsonify({"error": "name must not be empty"}), 400
+            name = _storable_name(data["name"])
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     risk_level = data.get("risk_level", profile["risk_level"])
     if risk_level not in ("conservative", "moderate", "aggressive"):
@@ -222,11 +290,14 @@ def update_profile():
         return jsonify({"error": "language must be en or zh"}), 400
 
     try:
-        security_threshold = float(
-            data.get("security_threshold", profile["security_threshold"])
+        security_threshold = _nonnegative(
+            data.get("security_threshold", profile["security_threshold"]),
+            "security_threshold",
         )
-        monthly_income = float(data.get("monthly_income", profile["monthly_income"]))
-    except (TypeError, ValueError):
+        monthly_income = _nonnegative(
+            data.get("monthly_income", profile["monthly_income"]), "monthly_income"
+        )
+    except ValueError:
         return jsonify(
             {"error": "security_threshold and monthly_income must be numbers"}
         ), 400
@@ -295,17 +366,19 @@ def delete_transaction(txn_id):
     if not _fits_sqlite_integer(txn_id):
         return jsonify({"error": "transaction not found"}), 404
     db = get_db()
-    db.execute(
+    cur = db.execute(
         'DELETE FROM "Transaction" WHERE id = ? AND user_id = ?',
         (txn_id, DEFAULT_USER_ID),
     )
     db.commit()
+    if cur.rowcount != 1:
+        return jsonify({"error": "transaction not found"}), 404
     return jsonify({"deleted": txn_id})
 
 
 @app.route("/api/ledger/add", methods=["POST"])
 def ledger_add():
-    """Structured accounting interface 鈥?the canonical non-chat way to add a transaction.
+    """Structured accounting interface —the canonical non-chat way to add a transaction.
     Goes through ledger.add_transaction, the same deterministic rules engine the chat
     assistant (both LLM and rule-based) uses, so the response includes the fresh budget
     status (with locked/available balance) alongside the transaction that was recorded.
@@ -358,14 +431,20 @@ def update_budget():
     if period_type not in ("weekly", "monthly"):
         return jsonify({"error": "period_type must be weekly or monthly"}), 400
 
+    # Validate before touching the database: a rejected request must not create a plan.
+    limits = {}
+    try:
+        for field in ("survival_limit", "buffer_limit", "learning_limit"):
+            if field in data:
+                limits[field] = _nonnegative(data[field], field)
+    except ValueError:
+        return jsonify({"error": "limits must be numbers"}), 400
+
     db = get_db()
     plan = ledger.get_or_create_budget_plan(db, period_type)
-    try:
-        survival_limit = float(data.get("survival_limit", plan["survival_limit"]))
-        buffer_limit = float(data.get("buffer_limit", plan["buffer_limit"]))
-        learning_limit = float(data.get("learning_limit", plan["learning_limit"]))
-    except (TypeError, ValueError):
-        return jsonify({"error": "limits must be numbers"}), 400
+    survival_limit = limits.get("survival_limit", plan["survival_limit"])
+    buffer_limit = limits.get("buffer_limit", plan["buffer_limit"])
+    learning_limit = limits.get("learning_limit", plan["learning_limit"])
 
     updated = ledger.update_budget_plan(
         db, period_type, survival_limit, buffer_limit, learning_limit
@@ -396,19 +475,26 @@ def create_goal():
     data = _json_body()
     if data is None:
         return jsonify({"error": "a JSON object is required"}), 400
+    name = data.get("name")
+    if not isinstance(name, str) or not name.strip() or "target_amount" not in data:
+        return jsonify({"error": "name and target_amount are required"}), 400
     try:
-        name = data["name"]
-        target_amount = float(data["target_amount"])
-    except (KeyError, TypeError, ValueError):
-        return jsonify({"error": "name and target_amount are required"}), 400
-    if not isinstance(name, str) or not name.strip():
-        return jsonify({"error": "name and target_amount are required"}), 400
+        name = _storable_name(name)
+        target_amount = _positive(data["target_amount"], "target_amount")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     try:
-        current_amount = float(data.get("current_amount", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "current_amount must be a number"}), 400
-    deadline = data.get("deadline")
+        current_amount = _nonnegative(
+            data.get("current_amount", 0), "current_amount"
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        deadline = _parse_deadline(data.get("deadline"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     db = get_db()
     cur = db.execute(
@@ -420,7 +506,7 @@ def create_goal():
             target_amount,
             current_amount,
             deadline,
-            ledger.utcnow().isoformat(),
+            ledger.now().isoformat(),
         ),
     )
     db.commit()
@@ -444,15 +530,21 @@ def update_goal(goal_id):
         return jsonify({"error": "goal not found"}), 404
     goal = row_to_dict(goal)
 
-    name = data.get("name", goal["name"])
-    if not isinstance(name, str) or not name.strip():
-        return jsonify({"error": "name must be a non-empty string"}), 400
+    name = goal["name"]
+    target_amount = goal["target_amount"]
+    current_amount = goal["current_amount"]
+    deadline = goal["deadline"]
     try:
-        target_amount = float(data.get("target_amount", goal["target_amount"]))
-        current_amount = float(data.get("current_amount", goal["current_amount"]))
-    except (TypeError, ValueError):
-        return jsonify({"error": "amounts must be numbers"}), 400
-    deadline = data.get("deadline", goal["deadline"])
+        if "name" in data:
+            name = _storable_name(data["name"])
+        if "target_amount" in data:
+            target_amount = _positive(data["target_amount"], "target_amount")
+        if "current_amount" in data:
+            current_amount = _nonnegative(data["current_amount"], "current_amount")
+        if "deadline" in data:
+            deadline = _parse_deadline(data["deadline"])
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     db.execute(
         "UPDATE Goal SET name = ?, target_amount = ?, current_amount = ?, deadline = ? "
@@ -469,10 +561,12 @@ def delete_goal(goal_id):
     if not _fits_sqlite_integer(goal_id):
         return jsonify({"error": "goal not found"}), 404
     db = get_db()
-    db.execute(
+    cur = db.execute(
         "DELETE FROM Goal WHERE id = ? AND user_id = ?", (goal_id, DEFAULT_USER_ID)
     )
     db.commit()
+    if cur.rowcount != 1:
+        return jsonify({"error": "goal not found"}), 404
     return jsonify({"deleted": goal_id})
 
 
@@ -480,9 +574,13 @@ def delete_goal(goal_id):
 def goal_progress():
     db = get_db()
     goals = [agent.compute_goal_progress(g) for g in ledger.list_goals(db)]
-    goal_id = request.args.get("id", type=int)
-    if goal_id is None:
+    raw_goal_id = request.args.get("id")
+    if raw_goal_id is None:
         return jsonify(goals)
+    try:
+        goal_id = int(raw_goal_id.strip())
+    except (AttributeError, TypeError, ValueError):
+        return jsonify({"error": "id must be an integer"}), 400
     if not _fits_sqlite_integer(goal_id):
         return jsonify({"error": "goal not found"}), 404
     match = next((g for g in goals if g["id"] == goal_id), None)
@@ -510,13 +608,31 @@ def insights():
 # Chat
 # ---------------------------------------------------------------------------
 def _goal_progress_params(progress):
+    days_left = progress["days_left"]
     return {
         "name": progress["name"],
         "current": progress["current_amount"],
         "target": progress["target_amount"],
         "pct": progress["pct"],
-        "days_left": progress["days_left"],
+        # A past deadline is reported as overdue days; "days left: -46" must never reach the UI.
+        "days_left": max(days_left, 0) if days_left is not None else None,
+        "days_overdue": max(-days_left, 0) if days_left is not None else 0,
     }
+
+
+def _pending_transaction_action(db, payload):
+    """Create the confirmation card for a proposed transaction.
+
+    The risk flag comes from `agent.exceeds_safety_threshold`, the same rule the
+    insights feed uses, so the dashboard warning and the chat warning always agree.
+    """
+    profile = get_profile_row(db)
+    status = ledger.compute_budget_status(db, "weekly")
+    needs_warning = payload["type"] == "expense" and agent.exceeds_safety_threshold(
+        profile, status, payload["amount"]
+    )
+    action_type = "risk_warning" if needs_warning else "confirm_credit"
+    return _create_chat_action(db, action_type, payload, "weekly")
 
 
 def _chat_with_rules(db, message):
@@ -525,8 +641,12 @@ def _chat_with_rules(db, message):
     intent = parsed.get("intent")
 
     if intent == "add_transaction":
-        amount = parsed.get("amount")
-        if amount is None:
+        try:
+            amount = ledger.parse_number(parsed.get("amount"))
+        except ValueError:
+            # Missing, non-numeric or non-finite (e.g. "9" * 400 parses to inf): ask for an amount.
+            return {"key": "chat_missing_amount", "params": {}}
+        if amount <= 0:
             return {"key": "chat_missing_amount", "params": {}}
 
         txn_type = parsed.get("txn_type") or "expense"
@@ -538,16 +658,7 @@ def _chat_with_rules(db, message):
             "note": "",
         }
 
-        profile = get_profile_row(db)
-        status = ledger.compute_budget_status(db, "weekly")
-        projected = max(status["available_balance"] - amount, 0)
-
-        if txn_type == "expense" and projected < profile["security_threshold"]:
-            action_type = "risk_warning"
-        else:
-            action_type = "confirm_credit"
-
-        action = _create_chat_action(db, action_type, payload, "weekly")
+        action = _pending_transaction_action(db, payload)
         return _action_response(action, None, "chat_action_preview", None)
 
     if intent == "budget_status":
@@ -606,14 +717,28 @@ def chat():
     data = _json_body()
     if data is None:
         return jsonify({"error": "a JSON object is required"}), 400
-    message = (data.get("message") or "").strip()
+    message = data.get("message")
+    if message is None:
+        return jsonify({"error": "message is required"}), 400
+    if not isinstance(message, str):
+        return jsonify({"error": "message must be a string"}), 400
+    message = message.strip()
     if not message:
         return jsonify({"error": "message is required"}), 400
+    if len(message) > limits.MAX_MESSAGE_LENGTH:
+        return jsonify({"error": "message is too long"}), 400
+
+    # Recent turns are plain text only; llm_agent normalises/caps them before use.
+    history = data.get("history")
+    if history is not None and not isinstance(history, list):
+        return jsonify({"error": "history must be an array"}), 400
+    if isinstance(history, list) and len(history) > 50:
+        history = history[-50:]
 
     db = get_db()
     if llm_agent.is_configured():
         try:
-            text, txn = llm_agent.chat_with_llm(db, message)
+            text, txn = llm_agent.chat_with_llm(db, message, history)
             if txn is not None:
                 payload = {
                     "amount": txn["amount"],
@@ -621,20 +746,13 @@ def chat():
                     "category": txn["category"],
                     "note": txn.get("note", ""),
                 }
-                profile = get_profile_row(db)
-                status = ledger.compute_budget_status(db, "weekly")
-                projected = max(status["available_balance"] - txn["amount"], 0)
-                action_type = (
-                    "risk_warning"
-                    if txn["type"] == "expense"
-                    and projected < profile["security_threshold"]
-                    else "confirm_credit"
-                )
-                action = _create_chat_action(db, action_type, payload, "weekly")
+                action = _pending_transaction_action(db, payload)
                 return jsonify(_action_response(action, text))
             return jsonify({"text": text})
-        except Exception:  # noqa: BLE001 鈥?any LLM failure falls back to the rules engine
-            pass
+        except Exception:  # noqa: BLE001 — any LLM failure falls back to the rules engine
+            logger.warning(
+                "LLM chat failed; falling back to the rule-based parser", exc_info=True
+            )
 
     return jsonify(_chat_with_rules(db, message))
 
@@ -666,7 +784,7 @@ def chat_action():
         return jsonify({"error": "action already " + action["status"]}), 409
 
     try:
-        expired = datetime.fromisoformat(action["expires_at"]) < ledger.utcnow()
+        expired = datetime.fromisoformat(action["expires_at"]) < ledger.now()
     except (TypeError, ValueError):
         expired = False
     if expired:

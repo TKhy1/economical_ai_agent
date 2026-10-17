@@ -20,6 +20,40 @@
     chatBusy: false,
   };
 
+  // Backend validation messages are English; map the known ones so the Chinese UI
+  // never shows a raw server string.
+  const BACKEND_ERROR_KEYS = {
+    "name must be a string": "error_name_invalid",
+    "name must not be empty": "error_name_invalid",
+    "name must be valid UTF-8 text": "error_name_invalid",
+    "name is too long": "error_name_invalid",
+    "security_threshold and monthly_income must be numbers": "error_numbers_invalid",
+    "amount must be positive": "error_amount_invalid",
+    "category is required": "error_category_invalid",
+    "category must be a string": "error_category_invalid",
+    "category is too long": "error_category_invalid",
+    "note must be a string": "error_note_invalid",
+    "note is too long": "error_note_invalid",
+    "deadline must be a string in YYYY-MM-DD format": "error_deadline_invalid",
+    "deadline must be a valid date in YYYY-MM-DD format": "error_deadline_invalid",
+    "name and target_amount are required": "err_goal_fields",
+    "target_amount must be a number": "error_goal_amounts",
+    "target_amount must be positive": "error_goal_amounts",
+    "target_amount must be nonnegative": "error_goal_amounts",
+    "current_amount must be a number": "error_goal_amounts",
+    "current_amount must be nonnegative": "error_goal_amounts",
+    "limits must be numbers": "error_budget_limits",
+    "risk_level must be conservative, moderate, or aggressive": "error_profile_options",
+    "language must be en or zh": "error_profile_options",
+    "message is required": "error_message_required",
+    "message must be a string": "error_message_required",
+    "message is too long": "error_message_too_long",
+    "limit must be an integer": "error_limit_invalid",
+    "id must be an integer": "error_id_invalid",
+    "action expired": "error_action_expired",
+    "action not found": "error_action_used",
+  };
+
   // ---- fetch helpers ----------------------------------------------------
   async function api(path, options = {}) {
     const res = await fetch(path, {
@@ -42,8 +76,25 @@
     return state.lang === "zh" ? "zh-CN" : "en-US";
   }
 
+  // Timestamps are stored as naive local time, so read the calendar date straight
+  // from the string. Handing it to the Date parser would let it guess a timezone
+  // and could shift the entry to the previous day.
+  function fmtTxnDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
+    if (!match) return "";
+    const d = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    return d.toLocaleDateString(locale());
+  }
+
   function tr(key, params) {
     return t(state.lang, key, params);
+  }
+
+  // `t()` falls back to the key itself; for data-driven labels (categories, tiers)
+  // prefer the raw value over "cat_xyz".
+  function labelOr(key, fallback) {
+    const value = tr(key);
+    return value === key ? fallback : value;
   }
 
   function toast(msg) {
@@ -52,6 +103,25 @@
     el.classList.add("show");
     clearTimeout(toast._t);
     toast._t = setTimeout(() => el.classList.remove("show"), 2200);
+  }
+
+  function toastError(err) {
+    const message = err && err.message ? err.message : "";
+    if (message.startsWith("action already")) {
+      toast(tr("error_action_used"));
+      return;
+    }
+    const key = BACKEND_ERROR_KEYS[message];
+    if (key) {
+      toast(tr(key));
+      return;
+    }
+    const hasCjk = /[\u4e00-\u9fff]/.test(message);
+    if (state.lang === "zh" && /[A-Za-z]/.test(message) && !hasCjk) {
+      toast(tr("error_request_failed"));
+      return;
+    }
+    toast(message || tr("error_request_failed"));
   }
 
   function escapeHtml(str) {
@@ -182,14 +252,14 @@
 
   function renderTxnRow(txn) {
     const sign = txn.type === "income" ? "+" : "-";
-    const catLabel = tr(`cat_${txn.category}`);
-    const tierLabel = tr(`tier_${txn.tier}`) || txn.tier;
+    const catLabel = labelOr(`cat_${txn.category}`, txn.category);
+    const tierLabel = labelOr(`tier_${txn.tier}`, txn.tier);
     const div = document.createElement("div");
     div.className = "txn-row";
     div.innerHTML = `
       <div class="txn-main">
         <span class="txn-cat">${escapeHtml(catLabel)}</span>
-        <span class="txn-meta">${tierLabel} · ${new Date(txn.occurred_at).toLocaleDateString(locale())} ${escapeHtml(txn.note || "")}</span>
+        <span class="txn-meta">${tierLabel} · ${fmtTxnDate(txn.occurred_at)} ${escapeHtml(txn.note || "")}</span>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="txn-amount ${txn.type}">${sign}${fmt(txn.amount)}</span>
@@ -287,7 +357,7 @@
         refreshTransactions();
         refreshBudget();
       } catch (err) {
-        toast(err.message);
+        toastError(err);
       }
     });
   }
@@ -326,7 +396,7 @@
         refreshBudget();
         refreshHome();
       } catch (err) {
-        toast(err.message);
+        toastError(err);
       }
     });
   }
@@ -413,7 +483,7 @@
         toast(tr("toast_goal_created"));
         refreshGoals();
       } catch (err) {
-        toast(err.message);
+        toastError(err);
       }
     });
   }
@@ -449,7 +519,7 @@
         toast(tr("toast_profile_saved"));
         refreshHome();
       } catch (err) {
-        toast(err.message);
+        toastError(err);
       }
     });
   }
@@ -464,8 +534,8 @@
         const sign = p.type === "income" ? "+" : "-";
         return tr("chat_transaction_added", {
           amount: sign + fmt(p.amount),
-          category: tr(`cat_${p.category}`),
-          tier: tr(`tier_${p.tier}`),
+          category: labelOr(`cat_${p.category}`, p.category),
+          tier: labelOr(`tier_${p.tier}`, p.tier),
         });
       }
       case "chat_budget_status":
@@ -481,6 +551,11 @@
       case "chat_goal_not_found":
         return tr("chat_goal_not_found", { name: p.name });
       case "chat_goal_progress":
+        if (p.days_overdue) {
+          return tr("chat_goal_overdue", {
+            name: p.name, pct: p.pct, current: fmt(p.current), target: fmt(p.target), days: p.days_overdue,
+          });
+        }
         if (p.days_left != null) {
           return tr("chat_goal_progress_deadline", {
             name: p.name, pct: p.pct, current: fmt(p.current), target: fmt(p.target), days: p.days_left,
@@ -505,8 +580,28 @@
     }
   }
 
+  function conversationHistory() {
+    const history = [];
+    state.chat.forEach((m) => {
+      if (m.sender === "user" && typeof m.text === "string" && m.text.trim()) {
+        history.push({ role: "user", content: m.text });
+      } else if (m.sender === "bot") {
+        const text = m.text != null ? m.text : chatReplyText(m);
+        if (text) history.push({ role: "assistant", content: text });
+      }
+    });
+    return history.slice(-12);
+  }
+
   function actionLabel(action) {
-    return action.type === "confirm_credit" ? tr("chat_confirm_credit") : tr("chat_risk_warning");
+    if (action.type === "confirm_credit") {
+      // Same action type covers income confirmations and safe expenses; the card must not
+      // call an expense a "credit".
+      return action.payload && action.payload.type === "expense"
+        ? tr("chat_confirm_expense")
+        : tr("chat_confirm_credit");
+    }
+    return tr("chat_risk_warning");
   }
 
   function renderChatAction(message) {
@@ -526,7 +621,7 @@
     card.appendChild(detail);
     const amount = document.createElement("div");
     amount.className = "chat-action-detail";
-    amount.textContent = `${fmt(action.payload.amount)} · ${tr(`cat_${action.payload.category}`)}`;
+    amount.textContent = `${fmt(action.payload.amount)} · ${labelOr(`cat_${action.payload.category}`, action.payload.category)}`;
     card.appendChild(amount);
 
     const buttons = document.createElement("div");
@@ -596,7 +691,7 @@
     } catch (err) {
       card.dataset.processing = "false";
       card.querySelectorAll("button").forEach((b) => { b.disabled = false; });
-      toast(err.message || tr("chat_action_failed"));
+      toastError(err);
     }
   }
 
@@ -616,6 +711,8 @@
       const text = input.value.trim();
       if (!text) return;
 
+      // Build the context before appending the current turn: the API sends it separately.
+      const history = conversationHistory();
       state.chat.push({ sender: "user", text });
       input.value = "";
       state.chatBusy = true;
@@ -626,7 +723,7 @@
       try {
         const resp = await api("/api/chat", {
           method: "POST",
-          body: JSON.stringify({ message: text }),
+          body: JSON.stringify({ message: text, history }),
         });
         if (resp.text != null) {
           state.chat.push({ sender: "bot", text: resp.text, action: resp.action });
@@ -669,7 +766,7 @@
           refreshGoals();
           refreshTransactions();
         } catch (err) {
-          toast(err.message);
+          toastError(err);
         }
       });
     });

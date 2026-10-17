@@ -52,7 +52,7 @@ def _clear_demo_rows(conn):
 
 
 def _seed_profile(conn):
-    now = ledger.utcnow().isoformat()
+    now = ledger.now().isoformat()
     conn.execute(
         "INSERT INTO UserProfile (id, name, risk_level, security_threshold, monthly_income, "
         "language, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -69,17 +69,29 @@ def _seed_profile(conn):
     conn.commit()
 
 
+def planned_occurred_dates(today, week_start, day_offsets):
+    """Dates for the demo rows, never later than `today`.
+
+    The fixed offsets describe a full Monday-to-Sunday week. Run mid-week, the later rows
+    would be dated in the future, so each one is clamped to today; the earlier rows keep
+    their weekday (Monday's rent stays on Monday).
+    """
+    return [min(week_start + timedelta(days=offset), today) for offset in day_offsets]
+
+
 def _seed_transactions(conn):
+    today = ledger.today()
     week_start = ledger.period_bounds("weekly")[0]
-    for category, txn_type, amount, note, day_offset in DEMO_TRANSACTIONS:
-        occurred_at = (week_start + timedelta(days=day_offset)).isoformat()
+    offsets = [row[4] for row in DEMO_TRANSACTIONS]
+    dates = planned_occurred_dates(today, week_start, offsets)
+    for (category, txn_type, amount, note, _), occurred_on in zip(DEMO_TRANSACTIONS, dates):
         ledger.add_transaction(
-            conn, amount, txn_type, category, note, occurred_at, "weekly"
+            conn, amount, txn_type, category, note, occurred_on.isoformat(), "weekly"
         )
 
 
 def _seed_goals(conn):
-    now = ledger.utcnow()
+    now = ledger.now()
     for name, target, current, deadline_days in DEMO_GOALS:
         deadline = (
             (now + timedelta(days=deadline_days)).date().isoformat()

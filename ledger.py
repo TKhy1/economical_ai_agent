@@ -1,4 +1,4 @@
-﻿"""Deterministic financial rules engine 鈥?the only code path allowed to mutate ledger data.
+"""Deterministic financial rules engine —the only code path allowed to mutate ledger data.
 
 Neither the LLM chat assistant nor the rule-based chat parser touches the database
 directly. Both describe *what* the user wants in plain terms and call `add_transaction`
@@ -6,16 +6,79 @@ here, exactly like a bank's core ledger sits behind a teller: whoever's asking, 
 deterministic rules run every time.
 """
 import math
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import agent
+import limits
 
 DEFAULT_USER_ID = 1
 
 
+def now():
+    """Current *local* wall-clock time as a naive datetime.
+
+    Rows store naive ISO strings without an offset so that they sort and compare
+    lexicographically, which only works while every reader and writer agrees on the
+    clock. The period windows (`period_bounds`) are local calendar windows and the
+    frontend renders these strings as local time, so transactions are stamped in
+    local time too. Stamping UTC here used to drop a local Monday 00:00-07:59 entry
+    into the previous week and show it as the previous day.
+    """
+    return datetime.now()
+
+
 def utcnow():
-    """Naive UTC timestamp 鈥?rows store naive ISO strings, so keep the offset off."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    """Deprecated alias of `now()`; it returns local time, not UTC.
+
+    Kept only for callers that imported the old name, so every timestamp in the
+    database still comes from the same clock.
+    """
+    return now()
+
+
+def today():
+    """Local calendar date - the reference date for every period window."""
+    return now().date()
+
+
+def parse_number(value):
+    """Coerce `value` to a finite float, rejecting booleans and non-numbers.
+
+    JSON booleans are not amounts: Python's ``float(True) == 1.0`` would silently
+    book ``{"amount": true}`` as CNY 1, so bools are rejected explicitly. NaN and
+    Infinity are rejected too (they can arrive as strings such as ``"NaN"``), and
+    so is a JSON integer too large for a C double (``float(10**400)`` raises
+    OverflowError, which used to escape as a 500). Values above
+    ``limits.MAX_AMOUNT`` are rejected too, so summing ledger rows can never produce
+    ``inf`` (and therefore never emits invalid JSON ``Infinity``).
+    """
+    if isinstance(value, bool):
+        raise ValueError("not a finite number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("not a finite number") from None
+    if not math.isfinite(number):
+        raise ValueError("not a finite number")
+    if abs(number) > limits.MAX_AMOUNT:
+        raise ValueError("number is too large")
+    return number
+
+
+def storable_text(value):
+    """Return `value` if it is a str SQLite can store in a TEXT column, else None.
+
+    Python's JSON decoder accepts a lone surrogate escape (`"\\ud800"` — not valid JSON, but decoded
+    anyway), and binding that to SQLite tries to encode it as UTF-8 and raises UnicodeEncodeError.
+    Callers check here before touching the database so that is a 400, not a 500.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+    return value
 
 
 def _row_to_dict(row):
@@ -24,7 +87,7 @@ def _row_to_dict(row):
 
 def period_bounds(period_type, ref_date=None):
     """Return the half-open [start, end) window that `period_type` covers today."""
-    ref_date = ref_date or date.today()
+    ref_date = ref_date or today()
     if period_type == "monthly":
         start = ref_date.replace(day=1)
         if start.month == 12:
@@ -76,7 +139,7 @@ def get_or_create_budget_plan(db, period_type):
             plan["survival_limit"],
             plan["buffer_limit"],
             plan["learning_limit"],
-            utcnow().isoformat(),
+            now().isoformat(),
         ),
     )
     db.commit()
@@ -102,7 +165,7 @@ def update_budget_plan(db, period_type, survival_limit, buffer_limit, learning_l
 
 
 def compute_locked_amount(db):
-    """Step 2 of the rules engine: money already committed to unmet savings goals is 'locked' 鈥?    it's still in the account, but it isn't really free to spend."""
+    """Step 2 of the rules engine: money already committed to unmet savings goals is 'locked' —    it's still in the account, but it isn't really free to spend."""
     locked = 0.0
     for g in list_goals(db):
         remaining = g["target_amount"] - g["current_amount"]
@@ -129,8 +192,11 @@ def compute_budget_status(db, period_type):
         total = r["total"] or 0.0
         if r["type"] == "expense":
             expense_total += total
-            if r["tier"] in spent:
-                spent[r["tier"]] += total
+            # Every expense has to land in one of the three pools, otherwise it
+            # would count in expense_total but be invisible per tier. Rows written
+            # before category_tier was direction-strict can still say "income";
+            # they fall back to the catch-all buffer pool.
+            spent[r["tier"] if r["tier"] in spent else "buffer"] += total
         else:
             income_total += total
 
@@ -161,6 +227,27 @@ def compute_budget_status(db, period_type):
     }
 
 
+def _local_occurred_at(value):
+    """Normalise a caller-supplied timestamp to a naive local ISO string.
+
+    A string without an offset is local wall-clock time (that is what the frontend
+    and the seed script send); one with an offset is converted to local time first.
+    Either way the stored value stays comparable to the local period bounds and to
+    every other row.
+    """
+    if value is None or value == "":
+        return now().isoformat()
+    if not isinstance(value, str):
+        raise ValueError("occurred_at must be a valid ISO timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except (TypeError, ValueError):
+        raise ValueError("occurred_at must be a valid ISO timestamp") from None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed.isoformat()
+
+
 def add_transaction(
     db, amount, txn_type, category, note="", occurred_at=None, period_type="weekly"
 ):
@@ -171,29 +258,38 @@ def add_transaction(
         raise ValueError("period must be weekly or monthly")
 
     try:
-        amount = float(amount)
-    except (TypeError, ValueError):
-        raise ValueError("amount must be positive")
-    if not math.isfinite(amount) or amount <= 0:
+        amount = parse_number(amount)
+    except ValueError:
+        raise ValueError("amount must be positive") from None
+    if amount <= 0:
         raise ValueError("amount must be positive")
 
-    category = (category or "").strip().lower()
+    if category is None:
+        raise ValueError("category is required")
+    category = storable_text(category)
+    if category is None:
+        raise ValueError("category must be a string")
+    category = category.strip().lower()
     if not category:
         raise ValueError("category is required")
+    if len(category) > limits.MAX_CATEGORY_LENGTH:
+        raise ValueError("category is too long")
 
-    if occurred_at:
-        try:
-            datetime.fromisoformat(occurred_at)
-        except (TypeError, ValueError):
-            raise ValueError("occurred_at must be a valid ISO timestamp")
-    else:
-        occurred_at = utcnow().isoformat()
+    if note is None:
+        note = ""
+    note = storable_text(note)
+    if note is None:
+        raise ValueError("note must be a string")
+    if len(note) > limits.MAX_NOTE_LENGTH:
+        raise ValueError("note is too long")
+
+    occurred_at = _local_occurred_at(occurred_at)
 
     tier = agent.category_tier(category, txn_type)
     cur = db.execute(
         'INSERT INTO "Transaction" (user_id, amount, type, category, tier, note, '
         "occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (DEFAULT_USER_ID, amount, txn_type, category, tier, note or "", occurred_at),
+        (DEFAULT_USER_ID, amount, txn_type, category, tier, note, occurred_at),
     )
     db.commit()
     txn = _row_to_dict(
