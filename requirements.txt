@@ -5,9 +5,10 @@
 #   venv\Scripts\python.exe -m pip install -r requirements.txt
 #
 # flask      —— Web 服务、路由、Jinja 模板渲染（templates/index.html）
-# anthropic  —— 可选的 LLM 对话后端（llm_agent.py 内惰性导入）；
-#               未安装或未配置 AI_API_KEY 时，app.py 自动回退到
-#               agent.py 的规则解析器，功能不受影响。
+# anthropic  —— 可选：仅用于 AI_PROVIDER=anthropic 的 Claude 后端（llm_agent.py 内惰性导入）。
+#               默认的 DeepSeek 后端只用标准库 urllib，不需要任何额外的 SDK；
+#               未安装或未配置 API Key 时，app.py 自动回退到 agent.py 的规则解析器，
+#               功能不受影响。
 #
 # 版本钉死为测试套件实际验证过的发行版。
 # 需要“逐字节可复现”的完整环境（含全部传递依赖）请改用 requirements.lock.txt。

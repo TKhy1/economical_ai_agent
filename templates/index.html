@@ -178,7 +178,12 @@
       <!-- ASSISTANT -->
       <section id="view-assistant" class="view">
         <div class="card chat-card">
-          <div class="card-title" data-i18n="card_assistant">AI Assistant</div>
+          <div class="card-title-row">
+            <div class="card-title" data-i18n="card_assistant">AI Assistant</div>
+            <!-- Filled by app.js from GET /api/chat/status: DeepSeek when a key is set,
+                 the built-in rule engine otherwise. -->
+            <span id="chat-engine-badge" class="chat-engine-badge" data-i18n="chat_engine_rules">Rule engine</span>
+          </div>
           <div id="chat-messages" class="chat-messages"></div>
           <form id="chat-form" class="chat-input-row">
             <input type="text" id="chat-input" placeholder="Ask me anything…" data-i18n-placeholder="chat_input_placeholder" autocomplete="off">

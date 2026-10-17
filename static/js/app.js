@@ -18,6 +18,7 @@
     lang: "en",
     chat: [],
     chatBusy: false,
+    chatEngine: null,
   };
 
   // Backend validation messages are English; map the known ones so the Chinese UI
@@ -149,7 +150,33 @@
     const activeTxnType = document.querySelector("#txn-type-segmented .seg-btn.active");
     populateCategoryOptions(activeTxnType ? activeTxnType.dataset.value : "expense");
 
+    renderChatEngineBadge();
     renderChatMessages();
+  }
+
+  // Which backend answers /api/chat: DeepSeek when a key is configured, the rule engine
+  // otherwise. The endpoint is secret-free, so it is safe to call from the page.
+  async function loadChatEngine() {
+    try {
+      state.chatEngine = await api("/api/chat/status");
+    } catch (err) {
+      state.chatEngine = null;
+    }
+  }
+
+  function renderChatEngineBadge() {
+    const badge = document.getElementById("chat-engine-badge");
+    if (!badge) return;
+    const engine = state.chatEngine;
+    if (engine && engine.configured) {
+      badge.textContent = tr("chat_engine_llm", { provider: engine.label || engine.provider });
+      badge.title = engine.model || "";
+      badge.classList.add("live");
+    } else {
+      badge.textContent = tr("chat_engine_rules");
+      badge.title = tr("chat_engine_rules_hint");
+      badge.classList.remove("live");
+    }
   }
 
   async function loadLanguage() {
@@ -784,7 +811,7 @@
     tickClock();
     setInterval(tickClock, 30000);
 
-    await loadLanguage();
+    await Promise.all([loadLanguage(), loadChatEngine()]);
     applyStaticTranslations();
     refreshHome();
   });

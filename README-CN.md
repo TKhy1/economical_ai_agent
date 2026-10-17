@@ -4,8 +4,9 @@
 逐档核对花销、为储蓄目标攒钱，并通过 AI 助手对话记账——而 AI 只能**提议**，写入账本
 必须经过确定性规则与用户确认。
 
-后端 Flask + SQLite，前端原生 HTML/CSS/JS；配置了 API Key 时走 Claude，
-没有 Key 时自动回退到内置的中英双语规则引擎，功能不降级。
+后端 Flask + SQLite，前端原生 HTML/CSS/JS；配置了 API Key 时走 **DeepSeek**（默认，
+OpenAI 兼容的 function calling），没有 Key 或调用失败时自动回退到内置的中英双语规则引擎，
+功能不降级。Claude（Anthropic Messages API）作为可选后端保留。
 
 ---
 
@@ -22,6 +23,10 @@
 - **带安全闸门的对话** —— 大模型（或规则解析器）只能**提议**交易；真正写入需要
   确认一条 10 分钟后自动过期的 `ChatAction`。浏览器会把最近几轮对话作为纯文本历史
   一并发送，让模型能理解追问。
+- **DeepSeek tool calling** —— 三个工具（记账提议、预算状态、目标进度）由模型按
+  OpenAI 兼容协议调用，本地执行；系统提示里还会带一份**只读的预算快照**（当期三档额度、
+  收支、锁定金额、可支配余额、目标进度），常见问题一次请求即可回答，省一轮 token。
+  超时/限流/鉴权失败会**自动回退**到规则引擎，并在聊天标题栏标注当前后端。
 - **中英双语 UI**，语言随用户档案持久化；零构建步骤，不依赖 JS 框架。
 
 ## 目录结构
@@ -30,10 +35,12 @@
 app.py              Flask 应用：路由、JSON 校验、对话动作状态机
 ledger.py           确定性规则引擎 —— 唯一允许写财务数据的入口
 agent.py            风险分配、类别归户、洞察生成、自然语言解析
-llm_agent.py        可选 Claude 客户端（tool use），自身不碰 SQLite
+llm_agent.py        LLM 对话层：DeepSeek（OpenAI 兼容 tool calling）/ Anthropic（可选），
+                    自身不碰 SQLite，只提议、不写账
 limits.py           共享的金额/文本上限，保证聚合值有限
-config.py           读取环境变量 / .env（AI_API_KEY、AI_MODEL）
+config.py           读取环境变量 / .env（AI_PROVIDER、DEEPSEEK_API_KEY、AI_MODEL…）
 seed_demo_data.py   重置并重新灌入一套可信的演示数据
+check_llm.py        对话后端自检：真实调用一次，打印 provider/模型/回复/耗时
 templates/index.html        单页外壳（六个 Tab）
 static/css/style.css        移动端优先的响应式布局
 static/js/app.js            视图逻辑、接口调用、对话渲染
@@ -77,23 +84,83 @@ venv\Scripts\python.exe -m unittest discover -s tests
 
 六个套件分别覆盖接口契约（`tests/test_input_validation.py`）、截止日期与洞察计算
 （`tests/test_goal_deadline.py`）、规则引擎与聊天解析（`tests/test_ledger_rules.py`）、
-LLM 配置与历史处理（`tests/test_llm_agent.py`）、演示数据脚本（`tests/test_seed_demo.py`）、
-前端 i18n 插值（`tests/test_frontend_i18n.py`，需要 Node，未安装时会跳过）。
+LLM 配置 / 历史处理 / DeepSeek tool-call 协议（`tests/test_llm_agent.py`）、演示数据脚本
+（`tests/test_seed_demo.py`）、前端 i18n 插值（`tests/test_frontend_i18n.py`，需要 Node，
+未安装时会跳过）。
 每个用例都跑在临时 SQLite 文件上，不会碰到真实数据库；若系统临时目录不可写，
 可设置环境变量 `ECONOMICAL_AGENT_TEST_TMP` 指向可写目录。
 
 ## 配置
 
-把 `.env.example` 复制为 `.env`：
+把 `.env.example` 复制为 `.env`，填上 DeepSeek 的 Key 即可（[获取地址](https://platform.deepseek.com/api_keys)）：
+
+```powershell
+Copy-Item .env.example .env
+# 编辑 .env：DEEPSEEK_API_KEY=sk-你的真实Key
+venv\Scripts\python.exe check_llm.py   # 自检：真实调用一次，确认 Key/端点/模型都可用
+venv\Scripts\python.exe app.py
+```
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `AI_API_KEY` | 空 | 启用 Claude 对话后端；留空则 `/api/chat` 走规则引擎 |
-| `AI_MODEL` | `claude-sonnet-5` | 传给 Messages API 的模型名 |
+| `DEEPSEEK_API_KEY` | 空 | DeepSeek 的 Key；留空则 `/api/chat` 走规则引擎 |
+| `AI_PROVIDER` | 按 Key 推断 | `deepseek` / `anthropic`；`openai` 视为 OpenAI 兼容协议的别名 |
+| `AI_MODEL` | 按后端 | DeepSeek：`deepseek-flash`；Claude：`claude-sonnet-5` |
+| `AI_BASE_URL` | 按后端 | DeepSeek：`https://api.deepseek.com`；Claude：SDK 默认（仅当显式改过才传给 SDK） |
+| `AI_TIMEOUT` | 按后端 | DeepSeek：`30` 秒；Claude：SDK 默认（不传） |
+| `AI_MAX_TOKENS` | 按后端 | DeepSeek：`600`；Claude：`400`（与原 Claude 接入一致） |
+| `AI_TEMPERATURE` | `0.7` | 采样温度（思考模式下不生效，因此不会发送） |
+| `AI_THINKING` | `auto` | `auto`：DeepSeek 官方端点关闭思考、第三方网关不发送该字段；`enabled` 会自动回传 `reasoning_content` |
+| `AI_REASONING_EFFORT` | 空 | 思考强度 `low` / `high` / `max`（仅思考模式） |
+| `AI_CONTEXT` | `true` | 是否把只读预算快照注入系统提示（Claude 也可设 `false` 关掉） |
+| `AI_MAX_RETRIES` | `1` | 429/5xx/网络错误的重试次数 |
+| `ANTHROPIC_API_KEY` | 空 | Claude 的 Key（原有接入方式，见下面的兼容性说明） |
 
-真实环境变量优先于 `.env`；`ANTHROPIC_API_KEY` 可作为 `AI_API_KEY` 的备用名。
-`.env.example` 中的占位符（以及其他明显的假值）会被视为未配置，因此不会发起注定失败的
-API 调用。若 `anthropic` 包缺失或调用失败，会记录一条警告并自动回退到规则回复——Demo 始终可用。
+**模型名（V4.1 Flash）** —— DeepSeek 官方 API 把这个模型固定叫 `deepseek-flash`，而其它目录
+（例如阿里云百炼）叫 `deepseek-v4.1-flash`。因此 `AI_MODEL` 在**官方端点**上会做等价映射：
+
+| 配置的 `AI_MODEL` | 实际发送给 `api.deepseek.com` |
+| --- | --- |
+| `deepseek-flash` / `deepseek-v4.1-flash` / `deepseek-v41-flash` / `DeepSeek-V4.1-Flash` | `deepseek-flash`（即 V4.1-Flash-1017） |
+| `deepseek-v4-flash` / `deepseek-v4.1-flash-1017` | `deepseek-flash`（历史/带日期的写法） |
+| `deepseek-v4-pro` | `deepseek-v4-pro` |
+| 其它自定义名字 | 原样发送 |
+
+换到第三方 OpenAI 兼容网关时**原样透传**（模型 ID 由该网关定义）。例如用阿里云百炼跑同一个模型：
+
+```dotenv
+AI_PROVIDER=openai
+AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+AI_MODEL=deepseek-v4.1-flash
+AI_API_KEY=<你的百炼/DashScope Key>
+```
+
+`GET /api/chat/status` 会同时给出 `model`（真正发送的 ID）和 `model_requested`（你配的写法），
+以及 `thinking`（实际行为：`enabled` / `disabled` / `omitted`），方便核对。
+
+### Claude 兼容性（原有接入不变）
+
+这次加 DeepSeek 没有动 Claude 那条路，旧配置可以原样继续用：
+
+- **Key 名字不变**：只设置 `ANTHROPIC_API_KEY` 或只设置 `AI_API_KEY` → 仍然走 Claude，
+  且 `AI_API_KEY` 仍优先于 `ANTHROPIC_API_KEY`（旧顺序）。
+  推断顺序：`AI_PROVIDER` → `DEEPSEEK_API_KEY` → `ANTHROPIC_API_KEY` → 单独的 `AI_API_KEY`（= Claude）→ 都没配时显示 DeepSeek。
+  占位符不算"已配置"，所以复制 `.env.example` 不会把 Claude 误判成 DeepSeek。
+- **默认值不变**：模型仍默认 `claude-sonnet-5`；`AI_MAX_TOKENS` 默认仍是 `400`；
+  `AI_TIMEOUT` 不设时不向 SDK 传超时（用 SDK 自己的默认值）；`AI_BASE_URL` 用默认值时也不传给 SDK。
+- **模型名不被改写**：别名映射只作用于 `api.deepseek.com`，`claude-*` 一律原样发送。
+- **调用协议不变**：仍是 Messages API + tool use，工具结果、`is_error`、`add_transaction` 只提议不写账都一致。
+- 唯一新增行为：系统提示末尾会附一段只读预算快照（`AI_CONTEXT=true`）。不想让 Claude 看到，
+  设 `AI_CONTEXT=false` 即可，此时提示词与之前逐字相同。
+
+真实环境变量优先于 `.env`。`AI_API_KEY` 是两个后端通用的键名：DeepSeek 优先用
+`DEEPSEEK_API_KEY`，Claude 保持旧顺序（`AI_API_KEY` 优先于 `ANTHROPIC_API_KEY`）。
+`.env` 用记事本保存为 UTF-8 即可（带 BOM 或用 ANSI/GBK 保存也能正确读取）。
+`.env.example` 里的占位符（以及 `your-...-key`、`xxxx` 之类的明显假值）会被
+视为未配置，因此不会发起注定失败的 API 调用。任何调用失败（未装 `anthropic`、网络不通、
+401/402/429、回复为空）都会记录一条警告并自动回退到规则回复——Demo 始终可用。
+当前生效的后端可以在界面聊天标题栏的徽标看到，也可以直接请求 `GET /api/chat/status`
+（不返回 Key）。
 
 ## 输入上限
 
@@ -130,7 +197,8 @@ API 响应不会出现非法 JSON 标记 `Infinity`。
 | PUT/DELETE | `/api/goals/<id>` | 修改 / 删除目标 |
 | GET | `/api/goal/progress?id=` | 附带 `pct`、`remaining`、`days_left` 的目标 |
 | GET | `/api/insights?period=` | 首页洞察列表 |
-| POST | `/api/chat` | 自然语言对话（有 Key 走 LLM，否则走规则） |
+| POST | `/api/chat` | 自然语言对话（有 Key 走 DeepSeek/Claude，否则走规则）；返回带 `source: llm \| rules` |
+| GET | `/api/chat/status` | 当前对话后端（provider / model / configured，不含 Key） |
 | POST | `/api/chat/action` | `{"id": ..., "decision": "confirm" \| "cancel"}` |
 
 所有 JSON 报错统一为 `{"error": "..."}` + 4xx 状态码：不会返回 HTML 错误页。
@@ -147,3 +215,30 @@ API 响应不会出现非法 JSON 标记 `Infinity`。
 本地周 / 月周期窗口用同一个时钟，所以一笔账一定计入它在本地发生的那一周。
 调用方可以带 UTC 偏移量传 `occurred_at`，`ledger` 会先换算成本地时间再落库。
 当天到期的目标 `days_left = 0`，仍按「今天到期」给出储蓄建议，而不是判为逾期。
+
+## 常见问题（Windows）
+
+### `/api/chat` 返回 500：`attempt to write a readonly database`
+
+数据库文件**不是当前进程可写的**：SQLite 能读、但建不了日志文件，于是任何写操作
+（记一笔账、确认对话卡片、改预算、加目标）都会失败，聊天看起来像"AI 坏了"，其实和模型无关。
+典型原因是这个 `.db` 文件是在工作区权限/沙箱建立**之前**创建的——沙箱只给之后新建的文件加
+写入权限，旧文件会被漏掉。
+
+修复：在同目录里新造一份副本替换它（新文件会继承当前正确的权限，数据不丢）：
+
+```powershell
+venv\Scripts\python.exe -c "import sqlite3; s=sqlite3.connect('economical_agent.db'); d=sqlite3.connect('economical_agent.db.fix'); s.backup(d); d.close(); s.close()"
+Move-Item economical_agent.db economical_agent.db.old -Force
+Move-Item economical_agent.db.fix economical_agent.db -Force
+venv\Scripts\python.exe app.py
+```
+
+如果第二条 `Move-Item` 提示"拒绝访问"，说明当前终端本身也在受限沙箱里，请改用资源管理器
+（或 `Win+R` 打开的普通终端）执行这两条。确认新库可用后，`economical_agent.db.old` 可以直接删掉。
+`app.py` 启动时如果检测到数据库只读，会立刻在日志里打印这条提示，而不是等对话进行到一半才报错。
+
+### 只改 `.env` 但后端没变
+
+`.env` 只在进程启动时读取一次，改完必须重启 `app.py`；真实环境变量优先于 `.env`。
+可以用 `venv\Scripts\python.exe check_llm.py` 随时确认当前生效的 provider / 模型 / Key 是否可用。

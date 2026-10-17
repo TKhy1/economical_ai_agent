@@ -47,6 +47,39 @@ def close_db(exception):
         db.close()
 
 
+def _warn_if_not_writable(conn):
+    """Surface an unwritable database at startup instead of one HTTP 500 per request.
+
+    On Windows this happens when the file was created before a workspace/tool sandbox
+    granted write access: SQLite can read it but cannot create its journal. The chat then
+    dies halfway through ("attempt to write a readonly database"). A clear startup error
+    beats a confusing failure during a conversation; the fix is in README-CN.md.
+    """
+    try:
+        # BEGIN alone does not touch the file: perform a real (rolled back) row write so a
+        # read-only file is detected here, at startup, instead of during a chat request.
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "UPDATE UserProfile SET name = name WHERE id = ?", (DEFAULT_USER_ID,)
+        )
+        conn.rollback()
+    except sqlite3.OperationalError as exc:
+        message = str(exc).lower()
+        if "readonly" in message:
+            logger.error(
+                "Database %s is READ-ONLY for this process: chat confirmations, "
+                "transactions and budget edits will fail. Replace it with a fresh copy "
+                "created inside this folder, or run the app from a normal terminal. "
+                "See README-CN.md (Windows troubleshooting).",
+                DB_PATH,
+            )
+        elif "locked" in message:
+            logger.warning(
+                "Database %s is locked by another process; writes will fail until it exits.",
+                DB_PATH,
+            )
+
+
 def init_db():
     """Create the schema and the demo profile. Safe to call repeatedly."""
     conn = sqlite3.connect(DB_PATH)
@@ -123,6 +156,7 @@ def init_db():
             )
         except sqlite3.OperationalError:
             pass
+    _warn_if_not_writable(conn)
     conn.commit()
     conn.close()
 
@@ -711,6 +745,16 @@ def _chat_with_rules(db, message):
     return {"key": "chat_help", "params": {}}
 
 
+@app.route("/api/chat/status", methods=["GET"])
+def chat_status():
+    """Which chat backend `/api/chat` will use.
+
+    Secret-free on purpose: the browser uses it to label the assistant (DeepSeek vs. the
+    built-in rule engine) and it is safe to expose in the page.
+    """
+    return jsonify(llm_agent.provider_status())
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """Receives natural-language text and returns the agent's response."""
@@ -747,14 +791,24 @@ def chat():
                     "note": txn.get("note", ""),
                 }
                 action = _pending_transaction_action(db, payload)
-                return jsonify(_action_response(action, text))
-            return jsonify({"text": text})
-        except Exception:  # noqa: BLE001 — any LLM failure falls back to the rules engine
+                # A model that proposes silently still gets a localized prompt on the card.
+                response = _action_response(
+                    action, text or None, "chat_action_preview", None
+                )
+                response["source"] = "llm"
+                return jsonify(response)
+            return jsonify({"text": text, "source": "llm"})
+        except Exception as exc:  # noqa: BLE001 — any LLM failure falls back to the rules engine
             logger.warning(
-                "LLM chat failed; falling back to the rule-based parser", exc_info=True
+                "LLM chat failed (%s: %s); falling back to the rule-based parser",
+                type(exc).__name__,
+                exc,
+                exc_info=True,
             )
 
-    return jsonify(_chat_with_rules(db, message))
+    response = _chat_with_rules(db, message)
+    response["source"] = "rules"
+    return jsonify(response)
 
 
 @app.route("/api/chat/action", methods=["POST"])
