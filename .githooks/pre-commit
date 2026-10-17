@@ -1,0 +1,74 @@
+#!/bin/sh
+# ===========================================================================
+# CampusWallet —— pre-commit 防泄露闸门
+#
+# 在每次 git commit 前检查「暂存区」内容，命中以下情况直接拦截：
+#   1) 文件名本身不该入库（.env / 数据库 / 私钥 / 证书 / 凭据文件）
+#   2) 文件内容里出现疑似密钥特征（sk-…、ghp_…、AKIA…、私钥头等）
+#
+# 设计取舍：不设「行内含 example/your 就放行」的白名单——那种规则能被
+# 「# example: sk-真Key」这类写法绕过。改用长度阈值：真实的 DeepSeek Key
+# 在 sk- 后有 32 位，而占位符（sk-your-real-key 等）远达不到 20 位，
+# 因此天然不会误报，也无需放行规则。
+#
+# 确认无误后要跳过检查：git commit --no-verify
+# ===========================================================================
+set -u
+
+if [ -t 1 ]; then
+  RED='\033[31m'
+  YEL='\033[33m'
+  RST='\033[0m'
+else
+  RED=''
+  YEL=''
+  RST=''
+fi
+
+fail=0
+
+# ---------- 没有暂存内容就直接放行 ----------
+staged=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+# ---------- 1. 危险文件名 ----------
+bad_names=$(printf '%s\n' "$staged" | grep -Ei \
+  '(^|/)\.env$|(^|/)\.env\.(local|prod|production|dev|development)$|(^|/)\.git-credentials$|(^|/)\.netrc$|(^|/)id_(rsa|dsa|ecdsa|ed25519)($|\.)|\.(pem|p12|pfx|keystore|jks)$|\.(db|sqlite|sqlite3)($|\.)' \
+  || true)
+
+if [ -n "$bad_names" ]; then
+  printf '%s\n' "${RED}✗ 提交被拦截：暂存区里有不该入库的文件${RST}"
+  printf '%s\n' "$bad_names" | sed 's/^/    /'
+  fail=1
+fi
+
+# ---------- 2. 内容中的密钥特征 ----------
+# 阈值说明：sk- 后至少 20 位才可能是真 Key，占位符达不到
+SECRET_RE='sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+
+# 只扫描暂存区（索引），不是工作区 —— 没被 add 的文件不影响提交
+hits=$(git grep --cached -n -I -E "$SECRET_RE" 2>/dev/null || true)
+
+if [ -n "$hits" ]; then
+  printf '%s\n' "${RED}✗ 提交被拦截：暂存内容中发现疑似密钥${RST}"
+  # 只打印 文件:行号，绝不回显命中内容，避免密钥二次外泄
+  printf '%s\n' "$hits" | cut -d: -f1,2 | sed 's/^/    /'
+  fail=1
+fi
+
+# ---------- 3. 结果 ----------
+if [ "$fail" -ne 0 ]; then
+  printf '\n%s\n' "${YEL}如何处理：${RST}"
+  printf '%s\n' \
+    "  1) 取消暂存：            git restore --staged <文件>" \
+    "  2) 让文件彻底不入库：    确认 .gitignore 已覆盖它" \
+    "  3) 把密钥换成占位符：    例如 DEEPSEEK_API_KEY=Enter DeepSeek API Key" \
+    "  4) 已经提交过的话：      用 git filter-repo 清理历史并立即更换该密钥" \
+    "" \
+    "  确认是误报、仍要提交：   git commit --no-verify"
+  exit 1
+fi
+
+exit 0
