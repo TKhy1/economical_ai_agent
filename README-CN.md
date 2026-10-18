@@ -260,3 +260,25 @@ venv\Scripts\python.exe app.py
 
 `.env` 只在进程启动时读取一次，改完必须重启 `app.py`；真实环境变量优先于 `.env`。
 可以用 `venv\Scripts\python.exe check_llm.py` 随时确认当前生效的 provider / 模型 / Key 是否可用。
+
+---
+
+## Android 测试包（可选）
+
+整套功能也已打成可在安卓手机上直接安装的测试包：**Chaquopy 内嵌 CPython 3.12 + 本地
+Werkzeug 服务 + WebView**，`ledger` / `agent` / `llm_agent` / 所有 REST 契约与单元测试
+都没被改写，桌面行为也保持不变（共享代码只在 `app.py` 增加了「数据库路径可注入」和
+模板的 `shell` 参数）。
+
+| 项 | 值 |
+| --- | --- |
+| 安装包 | [`dist/CampusWallet-1.0.0-arm64.apk`](dist/CampusWallet-1.0.0-arm64.apk)（20.8 MB，自签名） |
+| 适用 | Android 8.0+，仅 arm64-v8a；已在荣耀 400 Pro / MagicOS 10 / Android 16 实测 |
+| 安装说明 | [android/INSTALL.md](android/INSTALL.md) · [可打印卡片](android/install-card.html) |
+| 完整体验记录 | [android/README-ANDROID.md](android/README-ANDROID.md) |
+| 构建 | `powershell -ExecutionPolicy Bypass -File android\tools\build.ps1 -Task assembleRelease` |
+
+手机端与桌面端的差异只有三处，都已写进上面那份 README：数据库落在应用私有目录、
+AI Key 用应用内表单填写（不读 `.env`）、CSV 导出写入「下载/CampusWallet」。
+设备上跑过同一套单元测试：**200 个用例通过**（3 个 Claude SDK 用例因 Android 只接
+DeepSeek 而显式排除，1 个前端 i18n 用例因设备无 node 跳过）。

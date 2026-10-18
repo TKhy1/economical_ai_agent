@@ -1,0 +1,137 @@
+/* ===========================================================================
+   android.css —— 只在 Android 壳里加载（/ ?shell=android）
+   ---------------------------------------------------------------------------
+   style.css 是"移动端优先的网页 demo"：它把内容塞进一个 390x844 的假手机壳，
+   还画了一条假状态栏（9:41 + 信号图标）。真机上是 WebView 全屏 + 系统状态栏，
+   所以这里只做三件事：
+     1. 去掉假手机壳，让页面铺满真实视口；
+     2. 隐藏假状态栏（真状态栏由系统绘制，MainActivity 已按 insets 给内容留白）；
+     3. 处理滚动回弹与底部安全区。
+   桌面浏览器的渲染完全不受影响：这个文件在桌面上根本不会被加载。
+   =========================================================================== */
+
+body.app-shell {
+  display: block;
+  padding: 0;
+  min-height: 100dvh;
+  background: var(--phone-bg);
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+body.app-shell .phone {
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* 真机有自己的状态栏，HTML 里那条模拟的不能重复出现 */
+body.app-shell .statusbar {
+  display: none;
+}
+
+body.app-shell .screen {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 手势条压不到 tab 栏 */
+body.app-shell .tabbar {
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 输入框聚焦时不要出现浏览器式的选区高亮与长按气泡 */
+body.app-shell button,
+body.app-shell .tab-btn,
+body.app-shell .seg-btn {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* ---- 下拉刷新指示器（static/js/pull-refresh.js）---------------------------
+   初始停在视口上方 48px 处，跟随手指下移；达到阈值变实色，松手后转圈。 */
+.pull-indicator {
+  position: fixed;
+  top: -40px;
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(27, 29, 41, 0.18);
+  color: var(--primary);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -48px);
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.pull-indicator.ready {
+  color: var(--primary-dark);
+  box-shadow: 0 3px 14px rgba(79, 124, 255, 0.35);
+}
+
+.pull-arrow {
+  display: block;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.pull-indicator.spinning .pull-arrow {
+  animation: pull-spin 0.8s linear infinite;
+}
+
+@keyframes pull-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- 设置 Tab 里的「本机功能」卡片（static/js/android-native.js）--------
+   这是 App 内唯一的设置入口：AI 接入、导出、演示数据、诊断都在这里。
+   桌面上这张卡片不会被渲染（模板里按 shell 判断），所以不需要额外的隐藏规则。
+   五个按钮一行一个、占满整行；按钮本身的样式（主按钮蓝底 / 次按钮白底描边）
+   保持原样。 */
+body.app-shell .native-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 0;
+}
+
+body.app-shell .native-stack > button {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+body.app-shell .native-btn {
+  padding: 11px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+body.app-shell .native-btn:active {
+  background: #eef1f8;
+}
+
+/* 「清空全部数据」下面那行说明：跟在按钮组后面留一点间距 */
+body.app-shell #native-card .form-hint {
+  margin: 10px 0 0;
+  line-height: 1.45;
+}
+
+

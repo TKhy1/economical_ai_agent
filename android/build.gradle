@@ -1,0 +1,26 @@
+// Root build script.
+//
+// The build is deliberately plain Java + Groovy build scripts: no Kotlin plugin,
+// no AndroidX, no extra Gradle plugins beyond AGP and Chaquopy. Every artifact
+// that has to come from repository servers is listed here, and Google's hosts
+// (dl.google.com) are NOT reachable from this machine, so the Aliyun proxy of
+// Google Maven is listed first with Maven Central as the fallback/primary.
+buildscript {
+    repositories {
+        maven { url "https://maven.aliyun.com/repository/google" }
+        maven { url "https://maven.aliyun.com/repository/central" }
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.13.0"
+        classpath "com.chaquo.python:gradle:17.0.0"
+    }
+}
+
+allprojects {
+    repositories {
+        maven { url "https://maven.aliyun.com/repository/google" }
+        maven { url "https://maven.aliyun.com/repository/central" }
+        mavenCentral()
+    }
+}

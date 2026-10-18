@@ -65,6 +65,22 @@ logs/
 *.orig
 .recovery/
 
+# ---------- Android / Chaquopy（android/ 下由脚本生成或本机专属） ----------
+.toolchain/
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/python/
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties
+# 签名物料整目录排除：即使 storeFile 指向非 .jks 扩展名的文件也不会漏网
+android/keystore/
+android/keystore.properties
+
 # ---------- 编辑器与操作系统 ----------
 .vscode/
 .idea/

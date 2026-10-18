@@ -799,6 +799,22 @@
     });
   }
 
+  // ---- pull to refresh (Android shell only) -------------------------------
+  // The WebView dispatches `campus:refresh` when the user pulls down at the top of
+  // a view (see static/js/pull-refresh.js, loaded only in the Android shell), so
+  // the current tab reloads its data without a full page reload: the active tab,
+  // the chat history and the language stay exactly as they were. On the desktop
+  // nothing ever dispatches this event.
+  document.addEventListener("campus:refresh", () => {
+    const active = document.querySelector(".view.active");
+    const view = active ? active.id.replace("view-", "") : "home";
+    switchView(view);
+    loadChatEngine();
+    window.setTimeout(() => {
+      document.dispatchEvent(new Event("campus:refresh-done"));
+    }, 600);
+  });
+
   // ---- init ---------------------------------------------------------
   document.addEventListener("DOMContentLoaded", async () => {
     initTabs();

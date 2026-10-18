@@ -107,6 +107,16 @@
       lang_en: "English",
       lang_zh: "中文",
 
+      // Android shell only: the "this device" card inside the Settings tab.
+      // One button per row; only the destructive action keeps a caption.
+      card_native: "This device",
+      native_ai: "Connect the AI agent",
+      native_export: "Export ledger CSV",
+      native_seed: "Load demo data",
+      native_reset: "Clear all data",
+      native_diagnostics: "Diagnostics",
+      native_reset_hint: "'Clear all data' removes every transaction, budget and goal, resets your profile to defaults, and cannot be undone.",
+
       tier_survival: "Survival",
       tier_buffer: "Buffer",
       tier_learning: "Learning",
@@ -261,6 +271,16 @@
       settings_hint: "选择您偏好的显示语言。",
       lang_en: "English",
       lang_zh: "中文",
+
+      // 仅 Android 壳：底部「设置」Tab 里的「本机功能」卡片
+      // 按钮一行一个；只有破坏性操作保留一行说明。
+      card_native: "本机功能",
+      native_ai: "接入 AI Agent",
+      native_export: "导出账本 CSV",
+      native_seed: "灌入演示数据",
+      native_reset: "清空全部数据",
+      native_diagnostics: "诊断信息",
+      native_reset_hint: "「清空全部数据」会删除全部流水、预算与目标，并把资料重置为默认值，且无法恢复。",
 
       tier_survival: "生存",
       tier_buffer: "缓冲",

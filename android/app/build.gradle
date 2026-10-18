@@ -1,0 +1,121 @@
+apply plugin: "com.android.application"
+apply plugin: "com.chaquo.python"
+
+// Release signing comes from android/keystore.properties + android/keystore/*.jks,
+// both gitignored. If the file is missing (fresh clone), the release build falls
+// back to the debug key so it still produces an installable APK.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+android {
+    namespace "com.campuswallet.demo"
+    compileSdk 36
+    // AGP 8.13's default would be 35.0.0; the toolchain script installs 36.0.0
+    // only (matching compileSdk), so pin it instead of letting AGP look for a
+    // revision that is not there.
+    buildToolsVersion "36.0.0"
+
+    defaultConfig {
+        applicationId "com.campuswallet.demo"
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName "1.0.0"
+
+        // HONOR 400 Pro is arm64 only. Keeping a single ABI is the biggest size
+        // win available: every extra ABI would add another full CPython runtime.
+        ndk { abiFilters "arm64-v8a" }
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile rootProject.file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ""
+        }
+        release {
+            // R8 stays off: Chaquopy's native bridge and the JSON/reflection paths
+            // are painful to keep shrinking-safe for a test build, and the APK is
+            // dominated by the CPython runtime anyway (~21 MB).
+            minifyEnabled false
+            shrinkResources false
+            signingConfig keystorePropertiesFile.exists()
+                    ? signingConfigs.release
+                    : signingConfigs.debug
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs { useLegacyPackaging = false }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        // Must match the desktop venv (3.12.10): no version skew at all.
+        version = "3.12"
+        buildPython("D:/Python3.12.10/python.exe")
+
+        pip {
+            // Exactly the desktop pin. anthropic is deliberately absent: the
+            // Android build only talks to DeepSeek over the standard library.
+            //
+            // pypi.org is unreliable from this network: pip was observed hanging
+            // for 15+ minutes on a closed connection (CLOSE_WAIT, ~90% CPU) while
+            // resolving these packages. The Tsinghua mirror serves the same
+            // wheels; Chaquopy still adds its own index for the Android-specific
+            // ones (e.g. MarkupSafe cp312 arm64_v8a).
+            options("--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple",
+                    // Chaquopy's own wheel repository: MarkupSafe has no Android
+                    // wheel on PyPI, only here. Passing --index-url suppresses the
+                    // one Chaquopy would normally add, so re-add it explicitly.
+                    "--extra-index-url", "https://chaquo.com/pypi-13.1",
+                    "--no-cache-dir",
+                    "--timeout", "60",
+                    "--retries", "2",
+                    "--progress-bar", "off")
+            install "flask==3.1.3"
+        }
+
+        // Bytecode compilation (Chaquopy's default): ~2x smaller than shipping
+        // .py and faster to start. M3 temporarily disabled it so the self-test
+        // package could be extracted as source; the release build turns it back on.
+        pyc {
+            src = true
+        }
+
+        // Extract the debug-only self-test package to the filesystem on first
+        // import (see android/tools/sync_python.ps1 -IncludeTests). A release build
+        // has no such package, so this setting simply matches nothing there.
+        extractPackages "selftest"
+    }
+}
+
+dependencies {
+}

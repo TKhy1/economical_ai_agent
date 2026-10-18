@@ -290,3 +290,26 @@ it detects a read-only database, instead of failing halfway through a chat reque
 `.env` is read once per process, so restart `app.py`; real environment variables win over
 `.env`. `venv\Scripts\python.exe check_llm.py` prints the provider, model and a live call
 result at any time.
+
+---
+
+## Android test build (optional)
+
+The whole app is also packaged as an installable Android test build: Chaquopy embeds
+CPython 3.12, serves the unchanged Flask app on loopback and shows it in a WebView.
+The ledger/agent/LLM modules, the REST contract and the unit tests are untouched; the
+desktop behaves exactly as before (the only shared-code changes are an injectable DB
+path and a `shell` flag for the template).
+
+| Item | Value |
+| --- | --- |
+| APK | [`dist/CampusWallet-1.0.0-arm64.apk`](dist/CampusWallet-1.0.0-arm64.apk) (20.8 MB, self-signed) |
+| Requires | Android 8.0+, arm64-v8a only; verified on HONOR 400 Pro / MagicOS 10 / Android 16 |
+| Install guide | [android/INSTALL.md](android/INSTALL.md) · [printable card](android/install-card.html) |
+| Full engineering notes (Chinese) | [android/README-ANDROID.md](android/README-ANDROID.md) |
+| Build | `powershell -ExecutionPolicy Bypass -File android\tools\build.ps1 -Task assembleRelease` |
+
+On-device differences from the desktop build: the SQLite file lives in app-private
+storage, the AI key is entered in-app instead of read from `.env`, and CSV exports go
+to `Download/CampusWallet`. The same test suite runs on the phone: **200 tests pass**
+(3 Claude-SDK tests excluded by design, 1 frontend test skipped without Node).

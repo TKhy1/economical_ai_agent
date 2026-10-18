@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CampusWallet</string>
+    <string name="starting">正在启动…</string>
+    <string name="retry">重试</string>
+
+    <string name="settings_open">设置</string>
+    <string name="settings_title">AI 后端设置</string>
+    <string name="close">返回</string>
+    <string name="settings_hint">Key 只写入本机应用私有目录（files/config.json），不会编进 APK。留空时对话走内置规则引擎，功能不降级。</string>
+    <string name="backend_title">DeepSeek 后端</string>
+    <string name="api_key_hint">sk-…（留空 = 只用规则引擎）</string>
+    <string name="show_key">显示密钥</string>
+    <string name="label_model">模型</string>
+    <string name="model_hint">deepseek-flash</string>
+    <string name="label_base_url">接口地址</string>
+    <string name="base_url_hint">https://api.deepseek.com</string>
+    <string name="inject_context">把只读预算快照注入提示词（省一轮工具调用）</string>
+    <string name="save_apply">保存并应用</string>
+    <string name="test_connection">测试连接（真实调用一次）</string>
+    <string name="demo_data_title">演示数据</string>
+    <string name="seed_demo">灌入演示数据</string>
+    <string name="reset_data">清空全部数据</string>
+    <string name="show_diagnostics">显示诊断信息</string>
+
+    <!-- 原生设置列表 -->
+    <string name="settings_list_title">设置</string>
+    <string name="settings_list_hint">这些是本机设置。姓名、收入、风险偏好与界面语言在网页底部的「设置」Tab 里。</string>
+    <string name="row_ai_agent">选择接入 AI Agent</string>
+    <string name="row_ai_agent_off">未接入 · 对话使用内置规则引擎</string>
+    <string name="row_ai_agent_on">已接入 DeepSeek · %1$s</string>
+    <string name="row_export_csv">导出账本 CSV</string>
+    <string name="row_export_csv_sub">写入 下载/CampusWallet，可直接分享</string>
+    <string name="row_seed">灌入演示数据</string>
+    <string name="row_seed_sub">重置演示用户的账目、预算和目标</string>
+    <string name="row_seed_confirm">灌入演示数据会重置演示用户的账目、预算和目标，继续？</string>
+    <string name="row_reset">清空全部数据</string>
+    <string name="row_reset_sub">删除所有账目、预算与目标</string>
+    <string name="row_reset_confirm">清空后所有账目、预算和目标都会被删除且无法恢复，继续？</string>
+    <string name="row_diagnostics">诊断信息</string>
+    <string name="row_diagnostics_sub">Python 与依赖版本、数据库位置、后端状态</string>
+
+    <!-- 导出与通用反馈 -->
+    <string name="export_running">正在导出…</string>
+    <string name="export_done">已导出 %1$d 笔账目</string>
+    <string name="export_path">位置：%1$s</string>
+    <string name="export_share">分享</string>
+    <string name="action_done">已完成</string>
+</resources>

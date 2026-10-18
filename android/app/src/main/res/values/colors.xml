@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same palette as static/css/style.css so the splash and the WebView match. -->
+    <color name="app_bg">#F5F6FA</color>
+    <color name="brand">#4F7CFF</color>
+    <color name="text_primary">#1B1D29</color>
+    <color name="text_muted">#6B6F80</color>
+    <color name="danger">#E5484D</color>
+    <color name="card_bg">#FFFFFF</color>
+    <color name="border">#E6E8F0</color>
+</resources>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CampusWallet 安装说明卡片</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 40px;
+    background: #eef0f6;
+    color: #1b1d29;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+    line-height: 1.55;
+  }
+  .card {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 12px 32px rgba(27, 29, 41, .12);
+    padding: 28px 28px 24px;
+  }
+  h1 { margin: 0 0 2px; font-size: 22px; letter-spacing: -.2px; }
+  .sub { margin: 0 0 18px; color: #6b6f80; font-size: 13px; }
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin: 0 0 20px;
+  }
+  .meta div {
+    background: #f5f6fa;
+    border: 1px solid #e6e8f0;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #6b6f80;
+  }
+  .meta strong { display: block; color: #1b1d29; font-size: 13px; }
+  h2 {
+    margin: 22px 0 8px;
+    font-size: 13px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #4f7cff;
+  }
+  ol, ul { margin: 0; padding-left: 20px; }
+  li { margin: 4px 0; font-size: 13.5px; }
+  code {
+    background: #eef1f8;
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-size: 12.5px;
+  }
+  .warn {
+    margin: 10px 0 0;
+    background: #fff4e5;
+    border: 1px solid #f5d9a8;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .warn b { color: #b26a00; }
+  .ok {
+    margin: 10px 0 0;
+    background: #eaf8f1;
+    border: 1px solid #bfe6d3;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e6e8f0; vertical-align: top; }
+  th { color: #6b6f80; font-weight: 500; width: 38%; }
+  .foot { margin: 22px 0 0; color: #9aa0b0; font-size: 11.5px; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .card { box-shadow: none; border-radius: 0; max-width: none; }
+    h2 { color: #1b1d29; }
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>CampusWallet · 安装说明</h1>
+  <p class="sub">校园预算 AI 助手 · Android 测试包（未上架应用商店）</p>
+
+  <div class="meta">
+    <div><strong>版本 1.0.0</strong>versionCode 1</div>
+    <div><strong>20.8 MB</strong>仅 arm64 设备</div>
+    <div><strong>Android 8.0+</strong>minSdk 26</div>
+    <div><strong>已实测</strong>荣耀 400 Pro / Android 16</div>
+  </div>
+
+  <h2>一 · 装到手机</h2>
+  <ol>
+    <li>把 <code>CampusWallet-1.0.0-arm64.apk</code> 传到手机（USB / 微信文件传输助手 / 网盘）。</li>
+    <li>用「文件管理」点开 APK。</li>
+    <li>按提示允许「安装未知应用」「已了解此应用未经检测」，继续安装。</li>
+  </ol>
+
+  <h2>二 · 荣耀 / MagicOS 必看</h2>
+  <div class="warn">
+    <b>若安装界面连「安装」按钮都没有</b>：设置 → 系统和更新 → <b>纯净模式</b> → 关闭「增强防护」，再点一次 APK。
+  </div>
+
+  <h2>三 · 首次启动</h2>
+  <ol>
+    <li>点桌面图标 <b>CampusWallet</b>（蓝底白色 ¥），约 0.5 秒进入。</li>
+    <li>首次是空账本，界面默认英文：底部 <b>Settings → LANGUAGE → 中文</b> 可切换。</li>
+    <li>想看效果：<b>Settings → THIS DEVICE → Load demo data</b>，灌入一套演示账目。</li>
+  </ol>
+
+  <h2>四 · 接入 AI（可选）</h2>
+  <ol>
+    <li><b>Settings → THIS DEVICE → Connect the AI agent</b></li>
+    <li>粘贴 DeepSeek Key（<code>sk-...</code>）</li>
+    <li>点 <b>测试连接</b>，出现 <code>"ok": true</code> 才算通</li>
+    <li>点 <b>保存并应用</b>，聊天页徽标变为「DeepSeek 已接入」</li>
+  </ol>
+  <div class="ok">
+    Key 只存在本机应用私有目录，不随 APK 分发；<b>不填 Key 也能用</b>，对话自动走内置规则引擎。
+  </div>
+
+  <h2>五 · 数据与导出</h2>
+  <table>
+    <tr><th>账本数据库</th><td>应用私有目录（文件管理器不可见）</td></tr>
+    <tr><th>导出的 CSV</th><td><b>下载 / CampusWallet /</b>，每次导出一个文件，可系统分享</td></tr>
+    <tr><th>导出入口</th><td>Settings → THIS DEVICE → Export ledger CSV</td></tr>
+  </table>
+
+  <h2>六 · 卸载与清理</h2>
+  <p class="sub" style="margin:0 0 6px">设置 → 应用 → 应用管理 → CampusWallet → 卸载
+    （或 <code>adb uninstall com.campuswallet.demo</code>）</p>
+  <ul>
+    <li>会一并删除：APK、账本、AI Key、Python 运行时解压文件。</li>
+    <li><b>不会</b>自动删除：导出过的 CSV，请手动删除「下载/CampusWallet」文件夹。</li>
+  </ul>
+
+  <h2>七 · 常见问题</h2>
+  <table>
+    <tr><th>INSTALL_FAILED_UPDATE_INCOMPATIBLE</th><td>手机上有其它签名的旧版本，先卸载再装</td></tr>
+    <tr><th>一直停在「正在启动…」</th><td>重启应用；仍不行则卸载重装</td></tr>
+    <tr><th>聊天一直是规则引擎回复</th><td>Key 没配好，用「测试连接」确认</td></tr>
+    <tr><th>找不到导出的 CSV</th><td>文件管理 → 下载 → CampusWallet</td></tr>
+  </table>
+
+  <p class="foot">
+    SHA-256：848B25FF045483DEBCD9AC7DFD47A0C77DEC86D8D0DCF44C3EE246C48B75EAD1<br>
+    签名：自签名 CN=CampusWallet（APK Signature Scheme v2）· 仅供内部测试
+  </p>
+</div>
+</body>
+</html>

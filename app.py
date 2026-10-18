@@ -14,7 +14,11 @@ import limits
 import llm_agent
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "economical_agent.db")
+# The Android build injects a writable app-private path; the desktop keeps the
+# database next to app.py. Tests still override app.DB_PATH directly.
+DB_PATH = os.environ.get("ECONOMICAL_AGENT_DB") or os.path.join(
+    BASE_DIR, "economical_agent.db"
+)
 DEFAULT_USER_ID = ledger.DEFAULT_USER_ID
 
 # sqlite3 binds only signed 64-bit integers. Path/query parameters accept arbitrary
@@ -288,7 +292,13 @@ def _action_response(action, text=None, key=None, params=None):
 # ---------------------------------------------------------------------------
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # `shell=android` only swaps in one extra stylesheet (static/css/android.css):
+    # the Android build shows the app full screen in a WebView, so the desktop
+    # preview's 390x844 phone frame and the fake status bar must not be drawn
+    # there. On the desktop the value is empty and the page is unchanged.
+    return render_template(
+        "index.html", shell=os.environ.get("ECONOMICAL_AGENT_SHELL", "")
+    )
 
 
 @app.route("/api/profile", methods=["GET"])

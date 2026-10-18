@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only overlay: adds the on-device test runner so `adb shell am start`
+     can trigger the unittest suite. Release builds never see this file, which is
+     also why the runner cannot be reached from the normal UI. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <activity
+            android:name=".TestRunnerActivity"
+            android:exported="true"
+            android:label="Self test"
+            android:screenOrientation="portrait" />
+    </application>
+
+</manifest>

@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">CampusWallet — AI Financial Planner</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body>
+{% if shell == 'android' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/android.css') }}">
+{% endif %}</head>
+<body class="{{ 'app-shell' if shell == 'android' else '' }}">
   <div class="phone">
     <div class="statusbar">
       <span id="clock">9:41</span>
@@ -174,6 +175,28 @@
           </div>
           <p class="form-hint" data-i18n="settings_hint">Choose your preferred display language.</p>
         </div>
+
+        {%- if shell == 'android' %}
+        <!-- Android only: the single settings entry is this tab, so the AI
+             connection, CSV export, demo data and diagnostics all live here.
+             The buttons call native code through window.CampusNative
+             (WebBridge.java); on the desktop the card is not rendered at all.
+             One button per row, no per-button captions: only the destructive
+             action keeps a note, explaining exactly what it deletes. -->
+        <div class="card" id="native-card">
+          <div class="card-title" data-i18n="card_native">This device</div>
+
+          <div class="native-stack">
+            <button type="button" class="btn-primary" id="native-ai" data-i18n="native_ai">Connect the AI agent</button>
+            <button type="button" class="native-btn" id="native-export" data-i18n="native_export">Export ledger CSV</button>
+            <button type="button" class="native-btn" id="native-seed" data-i18n="native_seed">Load demo data</button>
+            <button type="button" class="native-btn" id="native-reset" data-i18n="native_reset">Clear all data</button>
+            <button type="button" class="native-btn" id="native-diagnostics" data-i18n="native_diagnostics">Diagnostics</button>
+          </div>
+
+          <p class="form-hint" data-i18n="native_reset_hint">"Clear all data" removes every transaction, budget and goal, resets your profile, and cannot be undone.</p>
+        </div>
+        {%- endif %}
       </section>
       <!-- ASSISTANT -->
       <section id="view-assistant" class="view">
@@ -220,5 +243,9 @@
 
   <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {%- if shell == 'android' %}
+  <script src="{{ url_for('static', filename='js/pull-refresh.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/android-native.js') }}"></script>
+  {%- endif %}
 </body>
 </html>
